@@ -20,6 +20,7 @@ import {
   askHalo,
   generateNotePreview,
   saveNoteAsDocx,
+  emailNoteAsDocx,
   generatePrepNote,
   getHaloTemplates,
   describeFile,
@@ -622,9 +623,35 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     setStatus(AppStatus.IDLE);
   }, [notes, patient.id, templateId, currentFolderId, loadFolderContents, onDataChange, onToast, buildNoteFileName]);
 
-  const handleEmail = useCallback((_noteIndex: number) => {
-    onToast('Email not implemented yet.', 'info');
-  }, [onToast]);
+  const handleEmail = useCallback(async (noteIndex: number) => {
+    const note = notes[noteIndex];
+    const text = note ? getNoteText(note) : '';
+    if (!text.trim()) return;
+    setSavingNoteIndex(noteIndex);
+    setStatus(AppStatus.SAVING);
+    try {
+      const tplId = note.template_id || templateId;
+      const fileName = buildNoteFileName(tplId, note.title || 'Note');
+      const result = await emailNoteAsDocx({
+        patientId: patient.id,
+        patientName: patient.name,
+        text,
+        fileName,
+      });
+      setNotes(prev => prev.map((n, i) => i !== noteIndex ? n : { ...n, lastSavedAt: new Date().toISOString(), dirty: false }));
+      await loadFolderContents(currentFolderId);
+      onDataChange();
+      if (result.emailSent) {
+        onToast('Note saved to Drive and emailed to your account.', 'success');
+      } else {
+        onToast('Note saved to Drive. Email delivery requires SMTP configuration.', 'info');
+      }
+    } catch (err) {
+      onToast(getErrorMessage(err), 'error');
+    }
+    setSavingNoteIndex(null);
+    setStatus(AppStatus.IDLE);
+  }, [notes, patient.id, patient.name, templateId, currentFolderId, loadFolderContents, onDataChange, onToast, buildNoteFileName]);
 
   const GENERATE_TIMEOUT_MS = 95_000;
 
@@ -1350,12 +1377,41 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                     <p className="text-sm text-slate-600 whitespace-pre-wrap">{pendingTranscript}</p>
                   </div>
                 ) : notes.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center text-slate-400">
-                    <p className="text-sm">
-                      {isGeneratingNotes
-                        ? 'HALO is generating your notes. You can switch to the Transcript tab to review while you wait.'
-                        : 'No notes yet. Use the Scribe to dictate, then choose templates to generate notes.'}
-                    </p>
+                  <div className="flex-1 flex items-center justify-center text-slate-400 p-6">
+                    {isGeneratingNotes ? (
+                      <div className="flex flex-col items-center gap-6 w-full max-w-xs text-center">
+                        <div className="relative w-16 h-16">
+                          <div className="absolute inset-0 rounded-full border-4 border-sky-100" />
+                          <div className="absolute inset-0 rounded-full border-4 border-sky-500 border-t-transparent animate-spin" />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <Loader2 className="w-5 h-5 text-sky-600 animate-spin" />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700 mb-1">
+                            {NOTE_GENERATION_STEPS[noteGenerationStep]}…
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            Generating {selectedTemplatesForGenerate.length} note(s). This usually takes 15–30s.
+                          </p>
+                        </div>
+                        <div className="flex gap-1.5 justify-center">
+                          {NOTE_GENERATION_STEPS.map((_, i) => (
+                            <div
+                              key={i}
+                              className={`h-1.5 rounded-full transition-all duration-500 ${
+                                i <= noteGenerationStep ? 'bg-sky-500 w-6' : 'bg-slate-200 w-3'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3 text-center">
+                        <p className="text-sm text-slate-500">No notes yet.</p>
+                        <p className="text-xs text-slate-400">Use the <strong>Record consultation</strong> button above to dictate, then generate notes from your transcript.</p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -1429,7 +1485,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                               Transcript
                             </p>
                             {isLiveStreaming && (
-                              <p className="text-[11px] text-emerald-600 font-medium mt-0.5">
+                              <p className="text-[11px] text-sky-600 font-medium mt-0.5">
                                 Live transcription in progress…
                               </p>
                             )}

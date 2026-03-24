@@ -31,6 +31,10 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
   const recordingMimeTypeRef = useRef<string>('audio/webm');
   const transcriptRef = useRef<string>('');
   const timerRef = useRef<number | null>(null);
+  /** Tracks whether the current stop was user-initiated (to suppress reconnect logic). */
+  const userStoppedRef = useRef<boolean>(false);
+  /** Number of WS reconnect attempts for the current session. */
+  const reconnectAttemptsRef = useRef<number>(0);
 
   const stopAudioVisualization = () => {
     if (rafRef.current != null) {
@@ -158,6 +162,8 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
   }, [onError]);
 
   const stopLive = useCallback(async () => {
+    userStoppedRef.current = true;
+    reconnectAttemptsRef.current = 0;
     const streamedText = transcriptRef.current.trim();
     cleanup();
     setIsLive(false);
@@ -174,6 +180,7 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
 
   const startLive = useCallback(async () => {
     if (isLive || connectionState === 'connecting') return;
+    userStoppedRef.current = false;
     transcriptRef.current = '';
     chunksRef.current = [];
     setElapsedMs(0);
@@ -232,13 +239,43 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         setConnectionState('closed');
-        void stopLive();
+        // If user explicitly stopped, just finalise normally
+        if (userStoppedRef.current) {
+          void stopLive();
+          return;
+        }
+        // Unexpected disconnection — attempt one reconnect after 2s
+        const MAX_RECONNECTS = 1;
+        if (reconnectAttemptsRef.current < MAX_RECONNECTS && streamRef.current) {
+          reconnectAttemptsRef.current += 1;
+          onError?.(`Live transcription disconnected (code ${event.code}). Reconnecting…`);
+          setTimeout(() => {
+            if (!userStoppedRef.current && streamRef.current) {
+              // Reconnect WS only — keep existing stream/recorder
+              try {
+                const newWsUrl = getTranscribeWebSocketUrl();
+                const newWs = new WebSocket(newWsUrl);
+                newWs.binaryType = 'arraybuffer';
+                wsRef.current = newWs;
+                newWs.onopen = () => { setConnectionState('open'); };
+                newWs.onmessage = ws.onmessage;
+                newWs.onclose = ws.onclose;
+                newWs.onerror = ws.onerror;
+              } catch {
+                void stopLive();
+              }
+            }
+          }, 2000);
+        } else {
+          onError?.('Live transcription connection lost. Your audio has been saved and will be transcribed.');
+          void stopLive();
+        }
       };
 
       ws.onerror = () => {
-        onError?.('WebSocket connection failed. Check that the server is running and DEEPGRAM_API_KEY is set.');
+        onError?.('Live transcription failed to connect. Check that DEEPGRAM_API_KEY is configured on the server.');
       };
     } catch (err) {
       setConnectionState('idle');
@@ -257,6 +294,25 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
     if (!mediaRecorderRef.current || !wsRef.current) return;
     // MediaRecorder keeps recording; pause only affects whether chunks are sent to WS.
   }, [isPaused]);
+
+  // Keyboard shortcut: Space to start/stop recording (only when no text input is focused)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      const target = e.target as HTMLElement;
+      const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      if (isTyping) return;
+      e.preventDefault();
+      if (connectionState === 'connecting') return;
+      if (isLive) {
+        void stopLive();
+      } else {
+        void startLive();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isLive, connectionState, startLive, stopLive]);
 
   const isBusy = connectionState === 'connecting';
   const seconds = Math.floor(elapsedMs / 1000);
@@ -299,7 +355,7 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
           className={`flex items-center gap-3 rounded-full px-4 py-2 text-sm font-semibold shadow-md transition-all ${
             isLive
               ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-500/30'
-              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/30'
+              : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-500/30'
           } ${isBusy ? 'opacity-70 cursor-not-allowed' : ''}`}
         >
           <div className="flex items-center justify-center w-7 h-7 rounded-full bg-white/10">
@@ -310,7 +366,7 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
               {isLive ? 'Recording' : 'Record consultation'}
             </span>
             <span className="text-[11px] font-normal opacity-80">
-              {isLive ? displayTime : 'Dictate while you examine'}
+              {isLive ? displayTime : 'Space to start · Dictate while you examine'}
             </span>
           </div>
           <div className="hidden md:flex items-end gap-[2px] h-4">

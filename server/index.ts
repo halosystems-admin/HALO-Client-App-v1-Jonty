@@ -71,9 +71,21 @@ app.use('/api/halo', aiLimiter, haloRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/request-template', requestTemplateRoutes);
 
-// Health check
+// Health check — returns server + dependency configuration status
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const checks: Record<string, 'ok' | 'unconfigured'> = {
+    server: 'ok',
+    gemini: config.geminiApiKey ? 'ok' : 'unconfigured',
+    deepgram: config.deepgramApiKey ? 'ok' : 'unconfigured',
+    haloApi: config.haloApiBaseUrl ? 'ok' : 'unconfigured',
+    smtp: (config.smtpHost && config.smtpUser) ? 'ok' : 'unconfigured',
+  };
+  const allOk = Object.values(checks).every(v => v === 'ok');
+  res.status(allOk ? 200 : 207).json({
+    status: allOk ? 'ok' : 'partial',
+    timestamp: new Date().toISOString(),
+    checks,
+  });
 });
 
 // Serve frontend in production
@@ -86,9 +98,13 @@ if (config.isProduction) {
 }
 
 // --- Global Error Handler ---
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err.message);
-  res.status(500).json({ error: 'An unexpected error occurred.' });
+app.use((err: Error & { status?: number; statusCode?: number }, _req: Request, res: Response, _next: NextFunction) => {
+  const status = err.status ?? err.statusCode ?? 500;
+  const message = status < 500
+    ? err.message
+    : 'Something went wrong on our end. Please try again.';
+  console.error(`[${status}] Unhandled error: ${err.message}`);
+  res.status(status).json({ error: message });
 });
 
 const server = http.createServer(app);

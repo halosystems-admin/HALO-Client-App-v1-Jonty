@@ -446,6 +446,18 @@ export const saveNoteAsDocx = (params: {
     }),
   });
 
+/** Email a note as DOCX to the signed-in user. Generates DOCX via Halo API and emails it. */
+export const emailNoteAsDocx = (params: {
+  patientId: string;
+  patientName: string;
+  text: string;
+  fileName?: string;
+}) =>
+  request<{ success: boolean; fileId: string; name: string; emailSent: boolean }>('/api/halo/confirm-and-send', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+
 export const searchPatientsByConcept = async (
   query: string,
   patients: Patient[],
