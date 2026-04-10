@@ -672,6 +672,15 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       setNoteGenerationStep(0);
       const templateIds = selectedTemplatesForGenerate;
       const templateNames = Object.fromEntries(templateOptions.map(t => [t.id, t.name]));
+
+      // Enrich transcript with patient summary context if available
+      const summaryContext = summary.length > 0
+        ? `\n\n[Patient Summary]\n${summary.map(s => `• ${s}`).join('\n')}`
+        : '';
+      const enrichedTranscript = summaryContext
+        ? `${trimmedTranscript}${summaryContext}`
+        : trimmedTranscript;
+
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Note generation is taking too long. Please try again.')), GENERATE_TIMEOUT_MS)
       );
@@ -681,7 +690,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             templateIds.map(id =>
               generateNotePreview({
                 template_id: id,
-                text: trimmedTranscript,
+                text: enrichedTranscript,
                 user_id: getHaloUserForTemplate(id),
               })
             )
@@ -700,7 +709,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                   .join('\n\n')
               : '';
           const content =
-            first?.content?.trim() || fromFields || trimmedTranscript;
+            first?.content?.trim() || fromFields || enrichedTranscript;
           return {
             noteId: first?.noteId ?? `note-${tid}-${Date.now()}`,
             title: first?.title ?? name,
@@ -764,6 +773,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       patient.id,
       selectedTemplatesForGenerate,
       templateOptions,
+      summary,
     ]
   );
 
@@ -1180,11 +1190,11 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
         <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto">
           {status === AppStatus.UPLOADING ? (
             <div className="w-48">
-              <div className="flex justify-between text-xs font-semibold text-sky-700 mb-1">
+              <div className="flex justify-between text-xs font-semibold text-cyan-700 mb-1">
                 <span>Uploading...</span><span>{uploadProgress}%</span>
               </div>
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div className="bg-sky-500 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div className="bg-cyan-500 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
               </div>
             </div>
           ) : (
@@ -1197,7 +1207,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                 />
                 <button
                   onClick={openUploadPicker}
-                  className="w-full md:w-auto flex justify-center items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white px-5 py-2.5 rounded-lg cursor-pointer transition-all shadow-md shadow-sky-600/20 text-sm font-semibold"
+                  className="w-full md:w-auto flex justify-center items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-5 py-2.5 rounded-lg cursor-pointer transition-all shadow-sm shadow-cyan-600/20 text-sm font-semibold"
                 >
                   <Upload className="w-4 h-4" /> Upload File
                 </button>
@@ -1212,7 +1222,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             </>
           )}
           {uploadMessage && status !== AppStatus.UPLOADING && (
-            <div className="w-full md:w-auto flex items-center gap-2 text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-200 px-3 py-1.5 rounded-md">
+            <div className="w-full md:w-auto flex items-center gap-2 text-xs font-semibold text-cyan-700 bg-cyan-50 border border-cyan-200 px-3 py-1.5 rounded-lg">
               <CheckCircle2 className="w-3.5 h-3.5" /> {uploadMessage}
             </div>
           )}
@@ -1260,23 +1270,33 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               <button
                 onClick={handleGenerateAiInsights}
                 disabled={aiLoading || status === AppStatus.LOADING}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-50 hover:bg-sky-100 border border-sky-100 text-xs font-semibold text-sky-700 transition disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-50 hover:bg-cyan-100 border border-cyan-100 text-xs font-semibold text-cyan-700 transition disabled:opacity-50"
               >
-                {aiLoading ? 'Generating HALO AI insights…' : 'Generate HALO AI insights for this patient'}
+                {aiLoading ? 'Generating AI insights…' : 'Generate AI insights for this patient'}
               </button>
             </div>
           )}
 
           {/* Tabs */}
-          <div className="flex gap-6 md:gap-8 border-b border-slate-200 mb-6 overflow-x-auto">
-            <button onClick={() => setActiveTab('overview')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap ${activeTab === 'overview' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Active Workspace</button>
-            <button onClick={() => setActiveTab('notes')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap ${activeTab === 'notes' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Editor &amp; Scribe</button>
-            <button onClick={() => setActiveTab('chat')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'chat' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-              <MessageCircle size={14} /> Ask HALO
-            </button>
-            <button onClick={() => setActiveTab('sessions')} className={`pb-3 text-sm font-bold border-b-2 transition-colors uppercase tracking-wide whitespace-nowrap flex items-center gap-1.5 ${activeTab === 'sessions' ? 'border-sky-600 text-sky-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-              <History size={14} /> Previous Sessions
-            </button>
+          <div className="flex gap-1 border-b border-slate-200 mb-6 overflow-x-auto">
+            {[
+              { id: 'overview', label: 'Folder' },
+              { id: 'notes', label: 'Scribe' },
+              { id: 'chat', label: 'Agent' },
+              { id: 'sessions', label: 'History' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                className={`px-4 pb-3 pt-1 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'border-cyan-600 text-cyan-700'
+                    : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           {activeTab === 'overview' ? (
@@ -1293,63 +1313,143 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               onCreateFolder={() => setShowCreateFolderModal(true)}
             />
           ) : activeTab === 'sessions' ? (
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-200 bg-slate-50/80">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                  Previous Sessions
-                </span>
-                <p className="text-xs text-slate-500 mt-1">
-                  Click a session to open it in the Editor &amp; Scribe workspace and view or edit the generated notes.
-                </p>
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Left: Patient Summary Panel */}
+              <div className="lg:w-72 shrink-0">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden sticky top-0">
+                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Patient Summary
+                    </span>
+                    <button
+                      onClick={handleGenerateAiInsights}
+                      disabled={aiLoading || status === AppStatus.LOADING}
+                      className="text-[11px] font-medium text-cyan-600 hover:text-cyan-700 disabled:opacity-40 transition-colors"
+                    >
+                      {aiLoading ? 'Updating…' : summary.length > 0 ? 'Refresh' : 'Generate'}
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    {/* Patient info */}
+                    <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+                      <div className="w-10 h-10 rounded-full bg-cyan-100 text-cyan-700 flex items-center justify-center text-sm font-bold shrink-0">
+                        {patient.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-800 text-sm">{patient.name}</p>
+                        <p className="text-xs text-slate-500">{patient.dob} · {patient.sex || 'Unknown'}</p>
+                      </div>
+                    </div>
+                    {aiLoading ? (
+                      <div className="flex items-center gap-2 py-4 justify-center">
+                        <Loader2 size={16} className="text-cyan-500 animate-spin" />
+                        <span className="text-xs text-slate-400">Analysing patient records…</span>
+                      </div>
+                    ) : summary.length > 0 ? (
+                      <ul className="space-y-2.5">
+                        {summary.map((point, i) => (
+                          <li key={i} className="flex gap-2 text-sm text-slate-700 leading-relaxed">
+                            <span className="text-cyan-500 mt-0.5 shrink-0">•</span>
+                            <span>{point}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-center py-4">
+                        <p className="text-xs text-slate-400 mb-3">
+                          Generate a clinical summary from patient files to add context to the history view.
+                        </p>
+                        <button
+                          onClick={handleGenerateAiInsights}
+                          disabled={aiLoading || status === AppStatus.LOADING || files.length === 0}
+                          className="text-xs font-medium text-cyan-600 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 px-3 py-1.5 rounded-lg transition disabled:opacity-40"
+                        >
+                          Generate Summary
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="p-4">
+
+              {/* Right: Session cards */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Previous Sessions {sessions.length > 0 && `(${sessions.length})`}
+                  </span>
+                  <p className="text-xs text-slate-400">
+                    Click a session to open it in Scribe
+                  </p>
+                </div>
+
                 {sessionsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="w-7 h-7 text-cyan-500 animate-spin" />
                   </div>
                 ) : sessions.length === 0 ? (
-                  <p className="text-sm text-slate-500 py-8 text-center">
-                    No previous sessions yet for this patient. Record a consultation and generate notes from the Editor &amp; Scribe tab.
-                  </p>
+                  <div className="bg-white rounded-xl border border-slate-200 border-dashed p-10 text-center">
+                    <p className="text-sm text-slate-400">
+                      No sessions yet. Record a consultation and generate notes from the Scribe tab.
+                    </p>
+                  </div>
                 ) : (
-                  <ul className="space-y-2">
-                    {sessions.map((session) => {
+                  <div className="space-y-2">
+                    {sessions.map(session => {
                       const createdDate = session.createdAt ? new Date(session.createdAt) : null;
                       const formattedDate = createdDate
-                        ? createdDate.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+                        ? createdDate.toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })
                         : 'Unknown date';
+                      const labelTime = createdDate
+                        ? createdDate.toLocaleTimeString(undefined, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '';
                       const mainComplaint =
                         session.mainComplaint?.trim() ||
                         (session.notes && session.notes.length > 0
                           ? extractMainComplaint(session.notes[0].content)
                           : '');
-                      const listTitle = mainComplaint
-                        ? `${formattedDate}, ${mainComplaint}`
-                        : formattedDate;
                       const hasNotes = session.notes && session.notes.length > 0;
-                      const labelTime = createdDate
-                        ? createdDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-                        : '';
                       return (
-                        <li key={session.id}>
-                          <button
-                            type="button"
-                            onClick={() => handleLoadSession(session)}
-                            className="w-full flex items-center justify-between gap-4 px-4 py-3 rounded-xl border border-slate-200 bg-white text-left hover:bg-sky-50 hover:border-sky-200 transition-colors group"
-                          >
-                            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                              <span className="font-medium text-slate-800 truncate">{listTitle}</span>
-                              <span className="text-xs text-slate-500">
-                                {labelTime ? `${labelTime}` : ''}
-                                {hasNotes ? ` • ${session.notes!.length} note(s)` : ' • transcript only'}
+                        <button
+                          key={session.id}
+                          type="button"
+                          onClick={() => handleLoadSession(session)}
+                          className="w-full flex items-center justify-between gap-4 px-4 py-3.5 rounded-xl border border-slate-200 bg-white text-left hover:bg-cyan-50 hover:border-cyan-200 transition-all group shadow-sm"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                              <span className="text-[11px] font-bold text-slate-500">
+                                {formattedDate.slice(0, 2)}
                               </span>
                             </div>
-                            <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-sky-600 shrink-0" />
-                          </button>
-                        </li>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800 text-sm truncate">
+                                {mainComplaint || 'Consultation'}
+                              </p>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                {formattedDate}
+                                {labelTime && ` · ${labelTime}`}
+                                {hasNotes
+                                  ? ` · ${session.notes!.length} note${session.notes!.length !== 1 ? 's' : ''}`
+                                  : ' · transcript only'}
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight
+                            size={16}
+                            className="text-slate-300 group-hover:text-cyan-500 transition-colors shrink-0"
+                          />
+                        </button>
                       );
                     })}
-                  </ul>
+                  </div>
                 )}
               </div>
             </div>
@@ -1665,7 +1765,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                           Need a different kind of letter or motivation?
                         </p>
                         <p className="text-xs text-slate-500 mb-1">
-                          Ask HALO to draft a new note (e.g. a motivation letter) based on this patient&rsquo;s documentation and transcript.
+                          Ask the Agent to draft a new note (e.g. a motivation letter) based on this patient&rsquo;s documentation and transcript.
                         </p>
                         <button
                           type="button"
@@ -1674,9 +1774,9 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                             setShowCustomAiNoteModal(true);
                             setCustomAiPrompt('');
                           }}
-                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white border border-sky-200 text-sky-700 hover:bg-sky-50 hover:border-sky-300 transition shadow-sm"
+                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-white border border-cyan-200 text-cyan-700 hover:bg-cyan-50 hover:border-cyan-300 transition shadow-sm"
                         >
-                          <MessageCircle className="w-4 h-4" /> Ask HALO to draft a custom note
+                          <MessageCircle className="w-4 h-4" /> Ask Agent to draft a custom note
                         </button>
                       </div>
                     </div>
@@ -1800,30 +1900,27 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
 
       {/* NOTE GENERATION OVERLAY */}
       {isGeneratingNotes && (
-        <div className="fixed inset-0 bg-slate-900/35 backdrop-blur-[1px] z-40 flex items-center justify-center pointer-events-none">
-          <div className="bg-white/95 border border-slate-200 rounded-2xl shadow-xl px-6 py-5 flex flex-col items-center gap-3 max-w-sm text-center pointer-events-auto">
+        <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-[2px] z-40 flex items-center justify-center pointer-events-none">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl px-7 py-6 flex flex-col items-center gap-3 max-w-xs text-center pointer-events-auto">
             <div className="relative mb-1">
-              <div className="w-10 h-10 rounded-full border-2 border-slate-200" />
-              <div className="absolute inset-0 rounded-full border-2 border-sky-500 border-t-transparent animate-spin" />
+              <div className="w-12 h-12 rounded-full border-2 border-slate-100" />
+              <div className="absolute inset-0 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
             </div>
-            <p className="text-sm font-semibold text-slate-800">HALO is preparing your notes…</p>
-            <div className="mt-1 w-full max-w-xs space-y-2">
+            <p className="text-sm font-bold text-slate-800">Preparing your notes…</p>
+            <div className="w-full space-y-2.5">
               {NOTE_GENERATION_STEPS.map((label, index) => {
+                const done = index < noteGenerationStep;
                 const active = index === noteGenerationStep;
                 return (
-                  <div
-                    // eslint-disable-next-line react/no-array-index-key
-                    key={index}
-                    className="flex items-center gap-2 text-left"
-                  >
+                  <div key={index} className="flex items-center gap-2.5 text-left">
                     <div
-                      className={`w-2 h-2 rounded-full ${
-                        active ? 'bg-sky-500 animate-pulse' : 'bg-slate-200'
+                      className={`w-2 h-2 rounded-full shrink-0 transition-colors ${
+                        done ? 'bg-emerald-400' : active ? 'bg-cyan-500 animate-pulse' : 'bg-slate-200'
                       }`}
                     />
                     <span
-                      className={`text-xs ${
-                        active ? 'font-semibold text-slate-900' : 'text-slate-400'
+                      className={`text-xs transition-colors ${
+                        done ? 'text-slate-400 line-through' : active ? 'font-semibold text-slate-800' : 'text-slate-400'
                       }`}
                     >
                       {label}
@@ -1832,8 +1929,8 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                 );
               })}
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              This usually takes a few seconds. You can continue reviewing the transcript while HALO prepares your notes.
+            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+              Usually a few seconds. Review your transcript while you wait.
             </p>
           </div>
         </div>
@@ -2021,9 +2118,9 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex flex-col">
-                <span className="text-sm font-semibold text-slate-800">Ask HALO to draft a custom note</span>
+                <span className="text-sm font-semibold text-slate-800">Ask Agent to draft a custom note</span>
                 <span className="text-xs text-slate-500">
-                  Describe what you need (e.g. &ldquo;Motivation for MRI&rdquo;, &ldquo;Sick note&rdquo;). HALO will draft it using this patient&rsquo;s documentation and transcript.
+                  Describe what you need (e.g. &ldquo;Motivation for MRI&rdquo;, &ldquo;Sick note&rdquo;). The agent will draft it using this patient&rsquo;s documentation and transcript.
                 </span>
               </div>
               <button
@@ -2045,7 +2142,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none resize-none"
               />
               <p className="text-[11px] text-slate-500">
-                HALO will use the same context as the <span className="font-semibold">Ask HALO</span> chat, plus your latest transcript, to generate the note.
+                The agent will use the same context as the <span className="font-semibold">Agent</span> tab, plus your latest transcript, to generate the note.
               </p>
             </div>
             <div className="px-5 py-4 border-t border-slate-100 flex gap-3 justify-end bg-slate-50/80">

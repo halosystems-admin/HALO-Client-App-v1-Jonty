@@ -80,6 +80,28 @@ ${customTemplate}`;
   return 'You are a medical scribe. Transcribe this audio into a SOAP note with ## headers for Subjective, Objective, Assessment, Plan.';
 }
 
+export function patientStickerExtractionPrompt(): string {
+  return `You are a clinical assistant. The attached image is a patient sticker or identification label from a hospital, clinic, or GP folder.
+
+Extract all visible patient information. Return a single JSON object (no markdown fences) with these fields (use null if not found):
+{
+  "fullName": "...",
+  "dob": "YYYY-MM-DD or null",
+  "idNumber": "...",
+  "folderNumber": "...",
+  "gender": "M or F or null",
+  "contactNumber": "...",
+  "address": "...",
+  "medicalAid": "...",
+  "medicalAidNumber": "...",
+  "medicalAidPlan": "...",
+  "email": "...",
+  "notes": "any other visible text that looks clinically relevant"
+}
+
+Return ONLY the raw JSON. No extra text, no code fences.`;
+}
+
 export function fileDescriptionPrompt(fileName: string, extractedText: string): string {
   const truncated = extractedText.substring(0, MAX_CONTENT_LENGTH);
   return `

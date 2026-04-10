@@ -398,6 +398,33 @@ export const transcribeAudio = async (audioBase64: string, mimeType: string): Pr
   return data.transcript ?? '';
 };
 
+/** Extract patient demographics from a scanned sticker/label image. */
+export interface StickerExtractedData {
+  fullName?: string | null;
+  dob?: string | null;
+  idNumber?: string | null;
+  folderNumber?: string | null;
+  gender?: string | null;
+  contactNumber?: string | null;
+  address?: string | null;
+  medicalAid?: string | null;
+  medicalAidNumber?: string | null;
+  medicalAidPlan?: string | null;
+  email?: string | null;
+  notes?: string | null;
+}
+
+export const extractPatientSticker = async (
+  base64Image: string,
+  mimeType: string,
+): Promise<StickerExtractedData> => {
+  const data = await request<{ extracted: StickerExtractedData }>('/api/ai/extract-sticker', {
+    method: 'POST',
+    body: JSON.stringify({ base64Image, mimeType }),
+  });
+  return data.extracted ?? {};
+};
+
 /** Ask Gemini to describe a single uploaded file for clinical context. */
 export const describeFile = async (patientId: string, file: DriveFile): Promise<string> => {
   const data = await request<{ description: string }>('/api/ai/describe-file', {

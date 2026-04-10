@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { PatientWorkspace } from './pages/PatientWorkspace';
 import { Toast } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
-import { checkAuth, getLoginUrl, logout, fetchAllPatients, warmAndListFiles, createPatient, deletePatient, loadSettings, saveSettings, ApiError, fetchTodayEvents } from './services/api';
+import { checkAuth, getLoginUrl, logout, fetchAllPatients, warmAndListFiles, createPatient, deletePatient, loadSettings, saveSettings, ApiError, fetchTodayEvents, extractPatientSticker } from './services/api';
 import type { Patient, UserSettings, CalendarEvent } from '../../shared/types';
-import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2 } from 'lucide-react';
+import type { StickerExtractedData } from './services/api';
+import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, ScanLine, Loader2 } from 'lucide-react';
 import { CalendarPage } from './pages/CalendarPage';
 
 const ENABLE_EXPANDED_CALENDAR =
@@ -26,6 +27,20 @@ export const App = () => {
   const [newPatientName, setNewPatientName] = useState("");
   const [newPatientDob, setNewPatientDob] = useState("");
   const [newPatientSex, setNewPatientSex] = useState<'M' | 'F'>('M');
+  // Extended profile fields
+  const [newPatientIdNumber, setNewPatientIdNumber] = useState("");
+  const [newPatientFolderNumber, setNewPatientFolderNumber] = useState("");
+  const [newPatientContact, setNewPatientContact] = useState("");
+  const [newPatientEmail, setNewPatientEmail] = useState("");
+  const [newPatientAddress, setNewPatientAddress] = useState("");
+  const [newPatientMedicalAid, setNewPatientMedicalAid] = useState("");
+  const [newPatientMedicalAidNumber, setNewPatientMedicalAidNumber] = useState("");
+  const [newPatientMedicalAidPlan, setNewPatientMedicalAidPlan] = useState("");
+  const [newPatientNotes, setNewPatientNotes] = useState("");
+  // Sticker scan state
+  const [stickerScanning, setStickerScanning] = useState(false);
+  const [stickerPreview, setStickerPreview] = useState<string | null>(null);
+  const stickerInputRef = useRef<HTMLInputElement>(null);
 
   // Settings / profile state
   const [showSettings, setShowSettings] = useState(false);
@@ -178,9 +193,63 @@ export const App = () => {
     setActiveMainView('workspace');
   };
 
+  const resetCreateForm = () => {
+    setNewPatientName("");
+    setNewPatientDob("");
+    setNewPatientSex("M");
+    setNewPatientIdNumber("");
+    setNewPatientFolderNumber("");
+    setNewPatientContact("");
+    setNewPatientEmail("");
+    setNewPatientAddress("");
+    setNewPatientMedicalAid("");
+    setNewPatientMedicalAidNumber("");
+    setNewPatientMedicalAidPlan("");
+    setNewPatientNotes("");
+    setStickerPreview(null);
+    setStickerScanning(false);
+  };
+
   const openCreateModal = () => {
     setLoading(false);
+    resetCreateForm();
     setShowCreateModal(true);
+  };
+
+  const handleStickerScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    // Show preview
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const dataUrl = reader.result as string;
+      setStickerPreview(dataUrl);
+      setStickerScanning(true);
+      try {
+        const base64 = dataUrl.split(',')[1];
+        const result: StickerExtractedData = await extractPatientSticker(base64, file.type || 'image/jpeg');
+        // Populate form fields from extraction
+        if (result.fullName) setNewPatientName(result.fullName);
+        if (result.dob) setNewPatientDob(result.dob);
+        if (result.gender === 'M' || result.gender === 'F') setNewPatientSex(result.gender);
+        if (result.idNumber) setNewPatientIdNumber(result.idNumber);
+        if (result.folderNumber) setNewPatientFolderNumber(result.folderNumber);
+        if (result.contactNumber) setNewPatientContact(result.contactNumber);
+        if (result.email) setNewPatientEmail(result.email);
+        if (result.address) setNewPatientAddress(result.address);
+        if (result.medicalAid) setNewPatientMedicalAid(result.medicalAid);
+        if (result.medicalAidNumber) setNewPatientMedicalAidNumber(result.medicalAidNumber);
+        if (result.medicalAidPlan) setNewPatientMedicalAidPlan(result.medicalAidPlan);
+        if (result.notes) setNewPatientNotes(result.notes);
+        showToast('Sticker scanned — please review and confirm extracted details.', 'success');
+      } catch {
+        showToast('Could not extract data from image. Please fill in manually.', 'info');
+      }
+      setStickerScanning(false);
+    };
+    reader.readAsDataURL(file);
   };
 
   const submitCreatePatient = async (e: React.FormEvent) => {
@@ -193,9 +262,7 @@ export const App = () => {
       if (newP) {
         await refreshPatients();
         setShowCreateModal(false);
-        setNewPatientName("");
-        setNewPatientDob("");
-        setNewPatientSex("M");
+        resetCreateForm();
         showToast('Patient folder created successfully.', 'success');
       }
     } catch (error) {
@@ -240,10 +307,10 @@ export const App = () => {
 
   if (!isReady) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <Loader className="animate-spin text-sky-600" size={32} />
-          <p className="text-sm text-slate-400 font-medium">Loading HALO...</p>
+      <div className="flex h-screen w-full items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-3">
+          <Loader className="animate-spin text-cyan-600" size={28} />
+          <p className="text-sm text-slate-400 font-medium">Loading HALO…</p>
         </div>
       </div>
     );
@@ -256,18 +323,21 @@ export const App = () => {
           <img
             src="/halo-medical-logo.png"
             alt="HALO Medical"
-            className="w-48 h-auto mx-auto mb-6 select-none"
+            className="w-44 h-auto mx-auto mb-6 select-none"
             draggable={false}
           />
           <h1 className="text-3xl font-bold text-slate-800 mb-2">Welcome to HALO</h1>
           <p className="text-slate-500 mb-8 leading-relaxed">Sign in to access your Secure Patient Drive.</p>
 
-          <button onClick={handleSignIn} className="w-full flex items-center justify-center gap-3 bg-sky-600 hover:bg-sky-700 text-white px-6 py-4 rounded-xl transition-all shadow-md hover:shadow-lg font-semibold text-lg active:scale-[0.98]">
-            {loading ? <Loader className="animate-spin" /> : <LogIn size={20} />}
-            {loading ? "Connecting..." : "Sign In with Google"}
+          <button
+            onClick={handleSignIn}
+            className="w-full flex items-center justify-center gap-3 bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-4 rounded-xl transition-all shadow-md font-semibold text-base active:scale-[0.98]"
+          >
+            {loading ? <Loader className="animate-spin" size={18} /> : <LogIn size={18} />}
+            {loading ? 'Connecting…' : 'Sign In with Google'}
           </button>
 
-          <p className="mt-8 text-xs text-slate-400">Secure Environment &bull; POPIA Compliant</p>
+          <p className="mt-8 text-xs text-slate-400">Secure Environment · POPIA Compliant</p>
         </div>
       </div>
     );
@@ -276,7 +346,7 @@ export const App = () => {
   const activePatient = patients.find(p => p.id === selectedPatientId);
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
+    <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden relative">
       <div className={`${selectedPatientId ? 'hidden md:flex' : 'flex'} h-full shrink-0 z-20`}>
         <Sidebar
           patients={patients}
@@ -368,37 +438,231 @@ export const App = () => {
 
       {/* CREATE PATIENT MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 m-4">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><UserPlus className="text-sky-600" size={24}/> New Patient Folder</h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition"><X size={20} /></button>
-            </div>
-            <form onSubmit={submitCreatePatient}>
-              <div className="space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-cyan-600 flex items-center justify-center">
+                  <UserPlus size={18} className="text-white" />
+                </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-600 mb-1.5">Full Name</label>
-                  <input autoFocus type="text" placeholder="e.g. Sarah Connor" value={newPatientName} onChange={(e) => setNewPatientName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition" />
+                  <h2 className="text-base font-bold text-slate-800">New Patient Folder</h2>
+                  <p className="text-xs text-slate-400">Scan a sticker or fill in manually</p>
                 </div>
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="block text-sm font-semibold text-slate-600 mb-1.5 flex items-center gap-1"><Calendar size={14} /> Date of Birth</label>
-                    <input type="date" value={newPatientDob} onChange={(e) => setNewPatientDob(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition" />
-                  </div>
-                  <div className="w-1/3">
-                    <label className="block text-sm font-semibold text-slate-600 mb-1.5 flex items-center gap-1"><Users size={14} /> Sex</label>
-                    <div className="flex bg-slate-100 p-1 rounded-xl">
-                      <button type="button" onClick={() => setNewPatientSex('M')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${newPatientSex === 'M' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>M</button>
-                      <button type="button" onClick={() => setNewPatientSex('F')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${newPatientSex === 'F' ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>F</button>
+              </div>
+              <button
+                onClick={() => { setShowCreateModal(false); resetCreateForm(); }}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Scan sticker banner */}
+            <div className="px-6 pt-4 shrink-0">
+              <div className="flex items-center gap-3 bg-cyan-50 border border-cyan-100 rounded-xl px-4 py-3">
+                <div className="w-9 h-9 rounded-lg bg-cyan-600 flex items-center justify-center shrink-0">
+                  <ScanLine size={18} className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-700">Scan Patient Sticker</p>
+                  <p className="text-xs text-slate-500 leading-snug">
+                    Upload a photo of the patient label — HALO will extract the details automatically.
+                  </p>
+                </div>
+                <div>
+                  {stickerScanning ? (
+                    <div className="flex items-center gap-1.5 text-xs text-cyan-600 font-medium">
+                      <Loader2 size={14} className="animate-spin" />
+                      Scanning…
                     </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => stickerInputRef.current?.click()}
+                      className="text-xs font-semibold text-cyan-700 bg-white border border-cyan-200 hover:bg-cyan-50 px-3 py-1.5 rounded-lg transition"
+                    >
+                      {stickerPreview ? 'Rescan' : 'Scan'}
+                    </button>
+                  )}
+                  <input
+                    ref={stickerInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleStickerScan}
+                  />
+                </div>
+              </div>
+              {stickerPreview && (
+                <div className="mt-2 flex items-center gap-2">
+                  <img
+                    src={stickerPreview}
+                    alt="Scanned sticker"
+                    className="h-10 w-auto rounded border border-slate-200 object-contain"
+                  />
+                  <span className="text-xs text-slate-400">Scanned sticker preview</span>
+                </div>
+              )}
+            </div>
+
+            {/* Form */}
+            <form onSubmit={submitCreatePatient} className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              {/* Core fields */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Full Name *</label>
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="e.g. Sarah Connor"
+                    value={newPatientName}
+                    onChange={e => setNewPatientName(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Date of Birth</label>
+                  <input
+                    type="date"
+                    value={newPatientDob}
+                    onChange={e => setNewPatientDob(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Sex</label>
+                  <div className="flex bg-slate-100 p-1 rounded-xl h-[42px]">
+                    <button
+                      type="button"
+                      onClick={() => setNewPatientSex('M')}
+                      className={`flex-1 rounded-lg text-sm font-bold transition-all ${newPatientSex === 'M' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >M</button>
+                    <button
+                      type="button"
+                      onClick={() => setNewPatientSex('F')}
+                      className={`flex-1 rounded-lg text-sm font-bold transition-all ${newPatientSex === 'F' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >F</button>
                   </div>
                 </div>
-                <div className="pt-2 flex gap-3">
-                  <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-3 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition">Cancel</button>
-                  <button type="submit" disabled={!newPatientName.trim() || loading} className="flex-1 bg-sky-600 hover:bg-sky-700 text-white px-4 py-3 rounded-xl font-bold shadow-lg shadow-sky-600/20 disabled:opacity-50 disabled:shadow-none transition flex items-center justify-center gap-2">
-                    {loading ? <Loader className="animate-spin" size={18}/> : 'Create Folder'}
-                  </button>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">ID / Passport</label>
+                  <input
+                    type="text"
+                    value={newPatientIdNumber}
+                    onChange={e => setNewPatientIdNumber(e.target.value)}
+                    placeholder="ID or passport number"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                  />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Folder Number</label>
+                  <input
+                    type="text"
+                    value={newPatientFolderNumber}
+                    onChange={e => setNewPatientFolderNumber(e.target.value)}
+                    placeholder="Hospital folder #"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Contact Number</label>
+                  <input
+                    type="tel"
+                    value={newPatientContact}
+                    onChange={e => setNewPatientContact(e.target.value)}
+                    placeholder="Mobile / landline"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Email</label>
+                  <input
+                    type="email"
+                    value={newPatientEmail}
+                    onChange={e => setNewPatientEmail(e.target.value)}
+                    placeholder="patient@email.com"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Address</label>
+                  <input
+                    type="text"
+                    value={newPatientAddress}
+                    onChange={e => setNewPatientAddress(e.target.value)}
+                    placeholder="Street, city, postal code"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                  />
+                </div>
+              </div>
+
+              {/* Medical aid */}
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Medical Aid</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Scheme</label>
+                    <input
+                      type="text"
+                      value={newPatientMedicalAid}
+                      onChange={e => setNewPatientMedicalAid(e.target.value)}
+                      placeholder="e.g. Discovery"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Member Number</label>
+                    <input
+                      type="text"
+                      value={newPatientMedicalAidNumber}
+                      onChange={e => setNewPatientMedicalAidNumber(e.target.value)}
+                      placeholder="Member #"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Plan / Option</label>
+                    <input
+                      type="text"
+                      value={newPatientMedicalAidPlan}
+                      onChange={e => setNewPatientMedicalAidPlan(e.target.value)}
+                      placeholder="e.g. Comprehensive"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Additional Notes</label>
+                <textarea
+                  value={newPatientNotes}
+                  onChange={e => setNewPatientNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Any other relevant information extracted from the sticker or added manually…"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition resize-none"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1 pb-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowCreateModal(false); resetCreateForm(); }}
+                  className="flex-1 px-4 py-2.5 rounded-xl font-medium text-sm text-slate-600 hover:bg-slate-100 border border-slate-200 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newPatientName.trim() || loading}
+                  className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-sm shadow-cyan-600/20 disabled:opacity-50 transition flex items-center justify-center gap-2"
+                >
+                  {loading ? <Loader className="animate-spin" size={16} /> : 'Create Folder'}
+                </button>
               </div>
             </form>
           </div>
@@ -421,7 +685,7 @@ export const App = () => {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setPatientToDelete(null)} className="flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition">Cancel</button>
-              <button onClick={confirmDelete} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white px-4 py-3 rounded-xl font-bold shadow-lg shadow-rose-500/20 transition flex items-center justify-center gap-2">
+              <button onClick={confirmDelete} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white px-4 py-3 rounded-xl font-bold shadow-sm shadow-rose-500/20 transition flex items-center justify-center gap-2">
                 {loading ? <Loader className="animate-spin" size={18}/> : <Trash2 size={18}/>}
                 Delete Folder
               </button>

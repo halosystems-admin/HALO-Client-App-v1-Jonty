@@ -41,14 +41,29 @@ const FileSkeleton: React.FC = () => (
   </div>
 );
 
+/** Files that should never be shown in the doctor-facing folder view. */
+function isHiddenSystemFile(file: DriveFile): boolean {
+  const name = file.name.toLowerCase();
+  // Hide internal JSON blobs (sessions, config, etc.)
+  if (name.endsWith('.json')) return true;
+  // Hide temp / scratch files
+  if (name.startsWith('tmp') || name.startsWith('temp')) return true;
+  // Hide known HALO system files
+  if (name.startsWith('halo_') || name.startsWith('.halo')) return true;
+  // Hide MIME-based JSON
+  if (file.mimeType === 'application/json') return true;
+  return false;
+}
+
 export const FileBrowser: React.FC<FileBrowserProps> = ({
   files, status, breadcrumbs,
   onNavigateToFolder, onNavigateBack, onNavigateToBreadcrumb,
   onStartEditFile, onDeleteFile, onViewFile, onCreateFolder,
 }) => {
   const isAtRoot = breadcrumbs.length <= 1;
-  const folders = files.filter(isFolder);
-  const regularFiles = files.filter(f => !isFolder(f));
+  const visibleFiles = files.filter(f => !isHiddenSystemFile(f));
+  const folders = visibleFiles.filter(isFolder);
+  const regularFiles = visibleFiles.filter(f => !isFolder(f));
 
   return (
     <div>
