@@ -11,6 +11,7 @@ import {
   chatSystemPrompt,
   geminiTranscriptionPrompt,
   fileDescriptionPrompt,
+  patientStickerExtractionPrompt,
 } from '../utils/prompts';
 
 const router = Router();
@@ -327,6 +328,40 @@ router.post('/chat', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Chat error:', err);
     res.json({ reply: 'I apologize, but I encountered an error processing your question. Please try again.' });
+  }
+});
+
+// POST /extract-sticker — extract patient demographics from a scanned sticker image
+router.post('/extract-sticker', async (req: Request, res: Response) => {
+  try {
+    const { base64Image, mimeType } = req.body as {
+      base64Image?: string;
+      mimeType?: string;
+    };
+
+    if (!base64Image || typeof base64Image !== 'string') {
+      res.status(400).json({ error: 'base64Image is required.' });
+      return;
+    }
+
+    const cleanBase64 = base64Image.split(',')[1] || base64Image;
+    const imageMime = (mimeType || 'image/jpeg') as string;
+    const raw = await analyzeImage(patientStickerExtractionPrompt(), cleanBase64, imageMime);
+
+    // Parse JSON — strip any accidental markdown fences
+    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+    let extracted: Record<string, string | null> = {};
+    try {
+      extracted = JSON.parse(cleaned);
+    } catch {
+      // Return whatever Gemini returned as a best-effort notes field
+      extracted = { notes: raw };
+    }
+
+    res.json({ extracted });
+  } catch (err) {
+    console.error('Sticker extraction error:', err);
+    res.status(500).json({ error: 'Could not extract patient data from image.' });
   }
 });
 
