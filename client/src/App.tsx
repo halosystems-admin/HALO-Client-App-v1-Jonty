@@ -358,7 +358,6 @@ export const App = () => {
           onLogout={handleLogout}
           onOpenSettings={() => setShowSettings(true)}
           userEmail={userEmail}
-          userSettings={userSettings}
           calendarEvents={calendarEvents}
           calendarLoading={calendarLoading}
           onSelectCalendarEvent={handleSelectCalendarEvent}
