@@ -4,6 +4,7 @@
  */
 
 import { config } from '../config';
+import type { JsonValue } from '../../shared/types';
 
 const BASE = config.haloApiBaseUrl;
 
@@ -43,6 +44,8 @@ export interface HaloNote {
   dirty?: boolean;
   /** Structured fields from generate_note (for preview before DOCX) */
   fields?: NoteField[];
+  /** Raw JSON-safe Halo note payload for structured history restore. */
+  rawData?: JsonValue;
 }
 
 const META_KEYS = new Set(['noteId', 'id', 'title', 'name', 'template_id', 'templateId', 'lastSavedAt', 'sections', 'fields', 'notes', 'data']);
@@ -90,10 +93,41 @@ function fieldsToContent(fields: NoteField[]): string {
   return fields.map(f => (f.label ? `${f.label}:\n${f.body || ''}` : f.body)).filter(Boolean).join('\n\n');
 }
 
+function toJsonValue(value: unknown, depth = 0): JsonValue | undefined {
+  if (depth > 8) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => toJsonValue(item, depth + 1))
+      .filter((item): item is JsonValue => item !== undefined);
+  }
+
+  if (typeof value === 'object') {
+    const out: Record<string, JsonValue> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      const jsonValue = toJsonValue(item, depth + 1);
+      if (jsonValue !== undefined) {
+        out[key] = jsonValue;
+      }
+    }
+    return out;
+  }
+
+  return undefined;
+}
+
 /** Normalize upstream response to array of HaloNote. Handles various shapes from Halo webhook. */
 function normalizeNotesResponse(data: unknown, templateId: string): HaloNote[] {
   const now = new Date().toISOString();
-  const oneNote = (content: string, title = 'Note 1', fields?: NoteField[]): HaloNote => ({
+  const oneNote = (
+    content: string,
+    title = 'Note 1',
+    fields?: NoteField[],
+    rawData?: JsonValue
+  ): HaloNote => ({
     noteId: `note-0-${Date.now()}`,
     title,
     content,
@@ -101,6 +135,7 @@ function normalizeNotesResponse(data: unknown, templateId: string): HaloNote[] {
     lastSavedAt: now,
     dirty: false,
     ...(fields && fields.length > 0 ? { fields } : {}),
+    ...(rawData !== undefined ? { rawData } : {}),
   });
 
   if (data == null) return [];
@@ -114,6 +149,7 @@ function normalizeNotesResponse(data: unknown, templateId: string): HaloNote[] {
       const fields = extractFieldsFromNoteData(item);
       const content = typeof item.content === 'string' ? item.content : (item.text ?? item.note ?? item.body ?? '');
       const finalContent = content || (fields ? fieldsToContent(fields) : String(item));
+      const rawData = toJsonValue(item);
       return {
         noteId: item.noteId ?? item.id ?? `note-${i}-${Date.now()}`,
         title: item.title ?? item.name ?? `Note ${i + 1}`,
@@ -122,6 +158,7 @@ function normalizeNotesResponse(data: unknown, templateId: string): HaloNote[] {
         lastSavedAt: item.lastSavedAt ?? now,
         dirty: false,
         ...(fields && fields.length > 0 ? { fields } : {}),
+        ...(rawData !== undefined ? { rawData } : {}),
       };
     }).filter(n => n.content.length > 0);
   }
@@ -150,7 +187,7 @@ function normalizeNotesResponse(data: unknown, templateId: string): HaloNote[] {
   if (fields && fields.length > 0) {
     const content = fieldsToContent(fields);
     const title = (obj.title as string) ?? (obj.name as string) ?? 'Note 1';
-    return [oneNote(content, title, fields)];
+    return [oneNote(content, title, fields, toJsonValue(obj))];
   }
 
   const content =
@@ -164,7 +201,14 @@ function normalizeNotesResponse(data: unknown, templateId: string): HaloNote[] {
     obj.note_content ??
     obj.message;
   if (typeof content === 'string' && content.trim()) {
-    return [oneNote(content.trim(), (obj.title as string) ?? (obj.name as string) ?? 'Note 1')];
+    return [
+      oneNote(
+        content.trim(),
+        (obj.title as string) ?? (obj.name as string) ?? 'Note 1',
+        undefined,
+        toJsonValue(obj)
+      ),
+    ];
   }
 
   // Unrecognized shape: log so we can extend the normalizer for the real HALO response

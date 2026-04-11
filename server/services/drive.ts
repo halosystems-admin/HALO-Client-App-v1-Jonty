@@ -237,6 +237,72 @@ export async function uploadToDrive(
 }
 
 /**
+ * Convert a DOCX buffer into a PDF buffer via a temporary Google Doc import.
+ * The temporary Google Doc is always cleaned up before returning.
+ */
+export async function convertDocxBufferToPdfBuffer(
+  token: string,
+  docxBuffer: Buffer,
+  parentFolderId: string,
+  baseName: string
+): Promise<Buffer> {
+  const importMetadata = JSON.stringify({
+    name: `${baseName}_preview_import`,
+    parents: [parentFolderId],
+    mimeType: 'application/vnd.google-apps.document',
+  });
+
+  const boundary = `halo_preview_${crypto.randomUUID()}`;
+  const importBody = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${importMetadata}\r\n` +
+        `--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n`
+    ),
+    docxBuffer,
+    Buffer.from(`\r\n--${boundary}--`),
+  ]);
+
+  const importRes = await fetch(`${uploadApi}/files?uploadType=multipart`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+    },
+    body: importBody,
+  });
+
+  if (!importRes.ok) {
+    const importError = await importRes.text().catch(() => 'Unknown import error');
+    throw new Error(`[Drive ${importRes.status}] Failed to import DOCX as Google Doc: ${importError}`);
+  }
+
+  const importedDoc = (await importRes.json()) as { id: string };
+
+  try {
+    const pdfRes = await fetch(
+      `${driveApi}/files/${importedDoc.id}/export?mimeType=application/pdf`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!pdfRes.ok) {
+      const exportError = await pdfRes.text().catch(() => 'Unknown export error');
+      throw new Error(`[Drive ${pdfRes.status}] Failed to export preview PDF: ${exportError}`);
+    }
+
+    return Buffer.from(await pdfRes.arrayBuffer());
+  } finally {
+    try {
+      await fetch(`${driveApi}/files/${importedDoc.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (cleanupErr) {
+      console.error(`[Drive] Failed to delete temp preview doc ${importedDoc.id}:`, cleanupErr);
+    }
+  }
+}
+
+/**
  * Download a file's text content from Google Drive.
  */
 export async function downloadTextFromDrive(token: string, fileId: string): Promise<string> {

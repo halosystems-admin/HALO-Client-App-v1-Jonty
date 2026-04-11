@@ -79,6 +79,14 @@ export interface NoteField {
   body: string;
 }
 
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
 export interface HaloNote {
   noteId: string;
   title: string;
@@ -88,6 +96,17 @@ export interface HaloNote {
   dirty?: boolean;
   /** Structured fields from generate_note (for preview before DOCX) */
   fields?: NoteField[];
+  /** Raw JSON-safe Halo note payload for structured history restore. */
+  rawData?: JsonValue;
+}
+
+export interface ScribeSessionNote {
+  noteId: string;
+  title: string;
+  content: string;
+  template_id: string;
+  fields?: NoteField[];
+  rawData?: JsonValue;
 }
 
 export interface HaloTemplate {
@@ -138,7 +157,7 @@ export interface ScribeSession {
   /** Human-readable note titles generated in this session (for display only). */
   noteTitles?: string[];
   /** Generated note content for this session (so we can show the actual note, not just transcript). */
-  notes?: Array<{ noteId: string; title: string; content: string; template_id: string }>;
+  notes?: ScribeSessionNote[];
   /** Short main complaint/summary for list display (e.g. "Ankle Fracture"). */
   mainComplaint?: string;
 }

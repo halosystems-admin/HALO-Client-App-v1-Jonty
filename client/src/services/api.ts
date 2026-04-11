@@ -8,6 +8,7 @@ import type {
   HaloNote,
   CalendarEvent,
   ScribeSession,
+  ScribeSessionNote,
 } from '../../../shared/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -97,6 +98,51 @@ async function request<T = unknown>(path: string, options: RequestInit = {}): Pr
   }
 
   return data as T;
+}
+
+async function requestBlob(path: string, options: RequestInit = {}): Promise<Blob> {
+  const url = `${API_BASE}${path}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    throw new ApiError(
+      `Failed to connect to server. ${error instanceof Error ? error.message : 'Unknown error'}`,
+      0
+    );
+  }
+
+  if (res.status === 401) {
+    window.location.href = '/';
+    throw new ApiError('Not authenticated', 401);
+  }
+
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    const contentType = res.headers.get('content-type') || '';
+    try {
+      if (contentType.includes('application/json')) {
+        const data = (await res.json()) as { error?: string };
+        message = data.error || message;
+      } else {
+        const text = await res.text();
+        if (text) message = text;
+      }
+    } catch {
+      // Keep default message.
+    }
+    throw new ApiError(message, res.status);
+  }
+
+  return res.blob();
 }
 
 // --- AUTH ---
@@ -274,7 +320,7 @@ export const savePatientSession = (
     context?: string;
     templates?: string[];
     noteTitles?: string[];
-    notes?: Array<{ noteId: string; title: string; content: string; template_id: string }>;
+    notes?: ScribeSessionNote[];
     mainComplaint?: string;
   }
 ) =>
@@ -475,6 +521,19 @@ export const generateNotePreview = (params: { template_id: string; text: string;
   request<{ notes: HaloNote[] }>('/api/halo/generate-note', {
     method: 'POST',
     body: JSON.stringify({ ...params, return_type: 'note' }),
+  });
+
+/** Generate a PDF preview for the current note state without saving it to Drive. */
+export const previewNotePdf = (params: {
+  patientId: string;
+  template_id: string;
+  text: string;
+  fileName?: string;
+  user_id?: string;
+}) =>
+  requestBlob('/api/halo/preview-note-pdf', {
+    method: 'POST',
+    body: JSON.stringify(params),
   });
 
 /** Generate DOCX and save to patient folder on Drive. Returns { success, fileId, name }. */
