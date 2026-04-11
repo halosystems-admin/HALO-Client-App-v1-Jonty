@@ -181,7 +181,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={onToggleCollapse}
-            className={`hidden md:inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${
+            className={`inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${
               collapsed ? '' : 'ml-auto'
             }`}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}

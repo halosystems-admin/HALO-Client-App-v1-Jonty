@@ -1389,26 +1389,32 @@ export const PatientWorkspace: React.FC<Props> = ({
                 <Pencil size={16} />
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 mt-2 font-medium">
-              <span className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap"><Calendar className="w-3.5 h-3.5" /> {patient.dob}</span>
-              <span className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap">Sex: {patient.sex || 'Unknown'}</span>
-              <span className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap"><Clock className="w-3.5 h-3.5" /> Last: {patient.lastVisit}</span>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] font-medium leading-tight text-slate-500 md:mt-2 md:gap-x-3 md:text-xs">
+              <span className="inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-50/90 px-1.5 py-0.5 text-slate-600 md:px-2 md:py-1">
+                <Calendar className="h-3 w-3 shrink-0 opacity-70 md:h-3.5 md:w-3.5" /> {patient.dob}
+              </span>
+              <span className="inline-flex items-center gap-0.5 rounded-md border border-slate-200/80 bg-slate-50/90 px-1.5 py-0.5 text-slate-600 md:px-2 md:py-1">
+                {patient.sex || '—'}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-50/90 px-1.5 py-0.5 text-slate-600 md:px-2 md:py-1">
+                <Clock className="h-3 w-3 shrink-0 opacity-70 md:h-3.5 md:w-3.5" /> {patient.lastVisit}
+              </span>
               <a
                 href={`https://drive.google.com/drive/folders/${patient.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap hover:bg-sky-100 hover:text-sky-700 transition-colors"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-50/90 px-1.5 py-0.5 text-slate-600 transition-colors hover:border-sky-200 hover:bg-sky-50/80 hover:text-sky-800 md:px-2 md:py-1"
                 title="Open patient folder in Google Drive"
               >
-                <FolderOpen className="w-3.5 h-3.5" /> Open in Drive <ExternalLink className="w-3 h-3" />
+                <FolderOpen className="h-3 w-3 shrink-0 opacity-70 md:h-3.5 md:w-3.5" /> Drive <ExternalLink className="h-2.5 w-2.5 opacity-60 md:h-3 md:w-3" />
               </a>
               <button
                 type="button"
                 onClick={startEditBilling}
-                className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap hover:bg-sky-100 hover:text-sky-700 transition-colors"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-50/90 px-1.5 py-0.5 text-slate-600 transition-colors hover:border-sky-200 hover:bg-sky-50/80 hover:text-sky-800 md:px-2 md:py-1"
                 title="Edit medical aid and billing details"
               >
-                <CreditCard className="w-3.5 h-3.5" /> Billing details
+                <CreditCard className="h-3 w-3 shrink-0 opacity-70 md:h-3.5 md:w-3.5" /> Billing
               </button>
             </div>
           </div>
@@ -1467,9 +1473,9 @@ export const PatientWorkspace: React.FC<Props> = ({
 
       {/* Content */}
       <div
-        className={`flex-1 ${
+        className={`min-h-0 flex-1 ${
           activeTab === 'chat'
-            ? 'overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5fbfe_100%)] px-0 py-0'
+            ? 'flex flex-col overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5fbfe_100%)] px-0 py-0'
             : activeTab === 'notes'
               ? 'overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-6 md:py-5'
             : 'overflow-y-auto bg-slate-50/50 px-4 py-4 md:px-6 md:py-5'
@@ -1478,7 +1484,7 @@ export const PatientWorkspace: React.FC<Props> = ({
         <div
           className={
             activeTab === 'chat'
-              ? 'h-full'
+              ? 'flex h-full min-h-0 min-w-0 flex-col'
               : activeTab === 'notes'
                 ? 'mx-auto h-full max-w-[1480px]'
                 : 'mx-auto max-w-6xl'
@@ -1739,13 +1745,13 @@ export const PatientWorkspace: React.FC<Props> = ({
                   </div>
                 ) : (
                   <>
-                    <div className="border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:px-5">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex flex-wrap items-center gap-2">
+                    <div className="border-b border-slate-200 bg-white/95 px-2 py-2 backdrop-blur md:px-5 md:py-3">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="-mx-1 flex max-w-full items-center gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:thin] touch-pan-x md:flex-wrap md:overflow-visible md:pb-0">
                           <button
                             type="button"
                             onClick={() => setConsultSubTab('context')}
-                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               consultSubTab === 'context'
                                 ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
                                 : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
@@ -1757,7 +1763,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                           <button
                             type="button"
                             onClick={() => setConsultSubTab('transcript')}
-                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                               consultSubTab === 'transcript'
                                 ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
                                 : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
@@ -1766,7 +1772,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                             <FileText className="h-3.5 w-3.5" />
                             Transcript
                           </button>
-                          <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+                          <div className="mx-0.5 hidden h-6 w-px shrink-0 bg-slate-200 sm:block" />
                           {notes.map((note, i) => (
                             <button
                               key={note.noteId}
@@ -1774,14 +1780,14 @@ export const PatientWorkspace: React.FC<Props> = ({
                               onClick={() => {
                                 setConsultSubTab(i);
                               }}
-                              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              className={`inline-flex max-w-[11rem] shrink-0 items-center gap-1.5 truncate rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                                 consultSubTab === i
                                   ? 'border-sky-200 bg-sky-50 text-sky-700 shadow-sm'
                                   : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                               }`}
                             >
-                              <FileText className="h-3.5 w-3.5" />
-                              {note.title || `Note ${i + 1}`}
+                              <FileText className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{note.title || `Note ${i + 1}`}</span>
                             </button>
                           ))}
                           <button
@@ -1790,7 +1796,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                               setShowAddNoteModal(true);
                               setSelectedTemplatesForGenerate(['clinical_note']);
                             }}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
                             title="Add note or letter"
                           >
                             <Plus className="h-3.5 w-3.5" />

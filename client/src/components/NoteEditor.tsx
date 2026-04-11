@@ -240,15 +240,15 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         )}
       </div>
 
-      <div className="border-t border-slate-200 bg-white/96 px-4 py-3 backdrop-blur-sm md:px-6">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+      <div className="border-t border-slate-200 bg-white/96 px-2 py-2 backdrop-blur-sm md:px-6 md:py-3">
+        <div className="flex flex-col gap-2 md:gap-3">
+          <div className="-mx-1 flex max-w-full items-center gap-2 overflow-x-auto px-1 pb-0.5 [scrollbar-width:thin] touch-pan-x md:flex-wrap md:justify-between md:overflow-visible md:pb-0">
+            <div className="flex shrink-0 items-center gap-2 md:flex-wrap">
               <button
                 type="button"
                 onClick={() => onSaveAsDocx(activeIndex)}
                 disabled={busy || !displayContent.trim()}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-sky-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50 md:h-10 md:gap-2 md:px-4 md:text-sm"
               >
                 {savingNoteIndex === activeIndex ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -261,7 +261,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 type="button"
                 onClick={() => onEmail(activeIndex)}
                 disabled={busy || !displayContent.trim()}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 md:h-10 md:gap-2 md:px-4 md:text-sm"
               >
                 {savingNoteIndex === activeIndex && status === AppStatus.SAVING ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -274,7 +274,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 type="button"
                 onClick={onSave}
                 disabled={busy}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 md:h-10 md:gap-2 md:px-4 md:text-sm"
               >
                 {status === AppStatus.SAVING && savingNoteIndex === null ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -285,12 +285,12 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1 shadow-sm">
+            <div className="flex shrink-0 items-center gap-2 md:flex-wrap">
+              <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-0.5 shadow-sm md:p-1">
                 <button
                   type="button"
                   onClick={() => onViewModeChange(activeNote.noteId, 'edit')}
-                  className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${
+                  className={`inline-flex h-8 items-center justify-center gap-1 rounded-full px-2.5 text-[11px] font-semibold transition md:h-9 md:gap-1.5 md:px-3 md:text-xs ${
                     activeViewMode === 'edit'
                       ? 'bg-white text-slate-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
@@ -302,7 +302,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 <button
                   type="button"
                   onClick={() => onViewModeChange(activeNote.noteId, 'preview')}
-                  className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${
+                  className={`inline-flex h-8 items-center justify-center gap-1 rounded-full px-2.5 text-[11px] font-semibold transition md:h-9 md:gap-1.5 md:px-3 md:text-xs ${
                     activeViewMode === 'preview'
                       ? 'bg-white text-slate-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-700'
@@ -316,7 +316,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 type="button"
                 onClick={() => void onLoadPreview(activeIndex, true)}
                 disabled={isPreviewLoading || !displayContent.trim()}
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 md:h-9 md:gap-1.5 md:px-3 md:text-xs"
               >
                 {isPreviewLoading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -328,22 +328,22 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="-mx-1 flex max-w-full items-center gap-2 overflow-x-auto px-1 text-[11px] [scrollbar-width:thin] touch-pan-x md:flex-wrap md:justify-between md:overflow-visible md:text-xs">
+            <div className="flex shrink-0 items-center gap-2 md:flex-wrap md:gap-3">
               {previewIsStale && (
-                <span className="font-medium text-amber-600">
+                <span className="font-medium whitespace-nowrap text-amber-600">
                   Preview needs refresh
                 </span>
               )}
               {activeNote.dirty && (
-                <span className="flex items-center gap-1 font-medium text-amber-600">
+                <span className="flex shrink-0 items-center gap-1 font-medium whitespace-nowrap text-amber-600">
                   <CloudOff className="h-3.5 w-3.5" />
                   Unsaved changes
                 </span>
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 text-slate-400">
+            <div className="flex shrink-0 items-center gap-2 text-slate-400 md:flex-wrap md:gap-3">
               {autosaveMsg && !activeNote.dirty && (
                 <span className="font-medium text-sky-600">✓ {autosaveMsg}</span>
               )}

@@ -288,8 +288,8 @@ export const PatientChat: React.FC<PatientChatProps> = ({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[linear-gradient(180deg,#fbfdff_0%,#f5fbfe_100%)]">
-      <div className="flex-1 overflow-y-auto px-4 pb-6 pt-5 custom-scrollbar md:px-8">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5fbfe_100%)]">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-3 custom-scrollbar sm:px-4 md:px-8 md:pb-6 md:pt-5">
         {chatMessages.length === 0 && !chatLoading ? (
           <div className="mx-auto flex h-full w-full max-w-5xl justify-end">
             <div className="inline-flex h-fit items-center gap-2 rounded-full border border-[#d8e7ef] bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm backdrop-blur-sm">
@@ -298,7 +298,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
             </div>
           </div>
         ) : (
-          <div className="mx-auto flex max-w-4xl flex-col gap-4 pb-4">
+          <div className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-3 pb-4 sm:gap-4">
             {chatMessages.map((msg, idx) => {
               const isLastAssistantStreaming =
                 chatLoading &&
@@ -315,7 +315,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
                     </div>
                   )}
                   <div
-                    className={`max-w-[85%] rounded-[26px] px-5 py-4 shadow-sm ${
+                    className={`max-w-[min(92%,28rem)] rounded-[26px] px-4 py-3 shadow-sm sm:max-w-[85%] sm:px-5 sm:py-4 ${
                       msg.role === 'user'
                         ? 'bg-[#3f9fcc] text-white'
                         : 'border border-[#d8e7ef] bg-white text-slate-800'
@@ -354,7 +354,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#eaf6fb] text-[#3294c7]">
                   <Bot size={16} />
                 </div>
-                <div className="max-w-[85%] rounded-[26px] border border-[#d8e7ef] bg-white px-5 py-4 shadow-sm">
+                <div className="max-w-[min(92%,28rem)] rounded-[26px] border border-[#d8e7ef] bg-white px-4 py-3 shadow-sm sm:max-w-[85%] sm:px-5 sm:py-4">
                   <div className="flex items-center gap-2.5">
                     <div className="flex gap-1">
                       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#63b8de]" style={{ animationDelay: '0ms' }} />
@@ -379,11 +379,11 @@ export const PatientChat: React.FC<PatientChatProps> = ({
         )}
       </div>
 
-      <div className="border-t border-[#e6eff5] bg-white/92 px-4 py-4 backdrop-blur-sm md:px-6">
-        <div className="mx-auto flex max-w-4xl flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+      <div className="shrink-0 border-t border-[#e6eff5] bg-white/92 px-2 py-3 backdrop-blur-sm sm:px-4 md:px-6">
+        <div className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-2 md:gap-3">
+          <div className="-mx-0.5 flex max-w-full items-center gap-2 overflow-x-auto px-0.5 pb-0.5 [scrollbar-width:thin] touch-pan-x md:flex-wrap md:overflow-visible">
+            <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[#d8e7ef] bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-sm md:px-3 md:py-1.5 md:text-xs">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 md:h-2 md:w-2" />
               Patient context live
             </div>
             {chatMessages.length === 0 && !chatLoading && (
@@ -396,7 +396,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
                       onChatInputChange(question);
                       inputRef.current?.focus();
                     }}
-                    className="rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-[#a8d5ea] hover:bg-[#f4fbfe] hover:text-[#2f84b4]"
+                    className="shrink-0 rounded-full border border-[#d8e7ef] bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 shadow-sm transition hover:border-[#a8d5ea] hover:bg-[#f4fbfe] hover:text-[#2f84b4] md:px-3 md:py-1.5 md:text-xs"
                   >
                     {question}
                   </button>
@@ -445,16 +445,16 @@ export const PatientChat: React.FC<PatientChatProps> = ({
             </div>
           )}
 
-          <div className="flex items-end gap-2.5 rounded-[24px] border border-[#d8e7ef] bg-[#f8fbfd] px-3 py-2.5 shadow-sm">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 rounded-[20px] border border-[#d8e7ef] bg-[#f8fbfd] p-2 shadow-sm sm:flex-row sm:items-end sm:gap-2.5 sm:rounded-[24px] sm:p-2.5">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={chatLoading || isRecording || isTranscribing}
-                className="flex h-10 w-10 items-center justify-center rounded-[18px] border border-[#d8e7ef] bg-white text-slate-500 transition hover:border-[#a8d5ea] hover:text-[#2f84b4] disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-9 w-9 items-center justify-center rounded-[14px] border border-[#d8e7ef] bg-white text-slate-500 transition hover:border-[#a8d5ea] hover:text-[#2f84b4] disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:w-10 sm:rounded-[18px]"
                 aria-label="Attach a file"
               >
-                <Paperclip className="h-4 w-4" />
+                <Paperclip className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </button>
               <input
                 ref={fileInputRef}
@@ -468,14 +468,14 @@ export const PatientChat: React.FC<PatientChatProps> = ({
                 type="button"
                 onClick={isRecording ? () => void stopRecording() : () => void startRecording()}
                 disabled={chatLoading || isTranscribing}
-                className={`flex h-10 w-10 items-center justify-center rounded-[18px] border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`flex h-9 w-9 items-center justify-center rounded-[14px] border transition disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:w-10 sm:rounded-[18px] ${
                   isRecording
                     ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
                     : 'border-[#d8e7ef] bg-white text-slate-500 hover:border-[#a8d5ea] hover:text-[#2f84b4]'
                 }`}
                 aria-label={isRecording ? 'Stop recording' : 'Dictate a query'}
               >
-                {isRecording ? <StopCircle className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                {isRecording ? <StopCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Mic className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
               </button>
             </div>
 
@@ -490,7 +490,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
                 }
               }}
               placeholder="Ask about notes, history, medications, or upload a document and tell HALO what to look for..."
-              className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400"
+              className="min-h-[40px] w-full min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 sm:min-h-[44px] sm:py-2"
               disabled={chatLoading || isTranscribing}
             />
 
@@ -498,7 +498,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
               type="button"
               onClick={() => void handleSend()}
               disabled={!chatInput.trim() || chatLoading || isRecording || isTranscribing}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-[18px] bg-[#3f9fcc] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f84b4] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-10 w-full shrink-0 items-center justify-center gap-2 rounded-[14px] bg-[#3f9fcc] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f84b4] disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-auto sm:rounded-[18px]"
             >
               <Send className="h-4 w-4" />
               Send
