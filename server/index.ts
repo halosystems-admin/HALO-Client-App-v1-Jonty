@@ -15,7 +15,13 @@ import { attachTranscribeWebSocket } from './ws/transcribe';
 // Conversion scheduler disabled — was running in background for txt→docx→pdf
 // import { startScheduler } from './jobs/scheduler';
 
+
 const app = express();
+
+// Trust Heroku proxy so rate limiting sees the real client IP
+if (config.isProduction) {
+  app.set('trust proxy', 1);
+}
 
 // --- Global Rate Limiter ---
 const globalLimiter = rateLimit({
