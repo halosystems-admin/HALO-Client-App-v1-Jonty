@@ -15,7 +15,7 @@ import {
   deleteFile,
   createFolder,
   askHaloStream,
-  askHalo,
+  generateCustomScribeNote,
   generateNotePreview,
   previewNotePdf,
   saveNoteAsDocx,
@@ -941,8 +941,10 @@ export const PatientWorkspace: React.FC<Props> = ({
             first?.fields && first.fields.length > 0
               ? fieldsToNoteContent(first.fields)
               : '';
-          const content =
-            first?.content?.trim() || fromFields || trimmedTranscript;
+          const hasStructuredFields = Boolean(first?.fields && first.fields.length > 0);
+          const content = hasStructuredFields
+            ? (first?.content?.trim() || fromFields)
+            : (first?.content?.trim() || fromFields || trimmedTranscript);
           return {
             noteId: first?.noteId ?? `note-${tid}-${Date.now()}`,
             title: first?.title ?? name,
@@ -1422,9 +1424,9 @@ export const PatientWorkspace: React.FC<Props> = ({
             />
             <button
               onClick={openUploadPicker}
-              className="inline-flex h-14 min-w-[180px] items-center justify-center gap-2 rounded-[22px] border border-[#cfe3ef] bg-white px-5 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b]"
+              className="inline-flex h-10 min-w-[132px] items-center justify-center gap-1.5 rounded-xl border border-[#cfe3ef] bg-white px-3 text-xs font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b] md:min-w-[150px] md:px-4 md:text-sm"
             >
-              <Upload className="w-4 h-4" /> Upload File
+              <Upload className="h-3.5 w-3.5 md:h-4 md:w-4" /> Upload File
             </button>
           </div>
           <input
@@ -1667,24 +1669,6 @@ export const PatientWorkspace: React.FC<Props> = ({
             </div>
           ) : activeTab === 'notes' ? (
             <>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
-                  <span className="h-2 w-2 rounded-full bg-cyan-500" />
-                  {activeSessionId
-                    ? 'Viewing a saved session. Recording starts a fresh one.'
-                    : 'Current consultation'}
-                </div>
-                {(currentTranscript || consultContext || notes.length > 0) && (
-                  <button
-                    type="button"
-                    onClick={prepareFreshRecordingSession}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                  >
-                    Start fresh
-                  </button>
-                )}
-              </div>
-
               <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-[#dbe9f1] bg-white shadow-[0_22px_55px_-36px_rgba(15,23,42,0.32)]">
                 {pendingTranscript ? (
                   <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -2450,7 +2434,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none resize-none"
               />
               <p className="text-[11px] text-slate-500">
-                The agent will use the same context as the <span className="font-semibold">Agent</span> tab, plus your latest transcript, to generate the note.
+                Drafts with Gemini using your patient folder context and optional transcript, then structures the note via Halo (letterhead applies when you save or preview DOCX/PDF).
               </p>
             </div>
             <div className="px-5 py-4 border-t border-slate-100 flex gap-3 justify-end bg-slate-50/80">
@@ -2472,27 +2456,45 @@ export const PatientWorkspace: React.FC<Props> = ({
                   if (!prompt) return;
                   setCustomAiLoading(true);
                   try {
-                    const historyForContext = chatMessagesRef.current || [];
-                    const response = await askHalo(patient.id, prompt, historyForContext);
-                    const content = response.reply?.trim();
-                    if (!content) {
-                      onToast('HALO did not return any text for this request. Please try again.', 'error');
+                    const res = await generateCustomScribeNote({
+                      patientId: patient.id,
+                      prompt,
+                      transcript: currentTranscript.trim() || undefined,
+                      consultContext: consultContext.trim() || undefined,
+                      template_id: templateId || 'jon_note',
+                      user_id: getHaloUserForTemplate(templateId),
+                    });
+                    const first = res.notes?.[0];
+                    if (!first) {
+                      onToast('No structured note was returned. Please try again.', 'error');
                     } else {
-                      const title = prompt.length > 60 ? `${prompt.slice(0, 57)}…` : prompt;
+                      const fromFields =
+                        first.fields && first.fields.length > 0
+                          ? fieldsToNoteContent(first.fields)
+                          : '';
+                      const hasStructuredFields = Boolean(first.fields && first.fields.length > 0);
+                      const content = hasStructuredFields
+                        ? (first.content?.trim() || fromFields)
+                        : (first.content?.trim() || fromFields || '');
+                      const title =
+                        (first.title?.trim() || (prompt.length > 60 ? `${prompt.slice(0, 57)}…` : prompt)) ||
+                        'Custom note';
                       const newNote: HaloNote = {
-                        noteId: `custom-${Date.now()}`,
-                        title: title || 'Custom note',
+                        noteId: first.noteId ?? `custom-${Date.now()}`,
+                        title,
                         content,
-                        template_id: 'jon_note',
+                        template_id: first.template_id || templateId || 'jon_note',
                         lastSavedAt: new Date().toISOString(),
                         dirty: true,
+                        ...(first.fields && first.fields.length > 0 ? { fields: first.fields } : {}),
+                        ...(first.rawData !== undefined ? { rawData: first.rawData } : {}),
                       };
                       setNotes((prev) => [...prev, newNote]);
                       const newIndex = notes.length;
                       setConsultSubTab(newIndex);
                       setShowCustomAiNoteModal(false);
                       setCustomAiPrompt('');
-                      onToast('Custom note drafted. You can edit and save it as DOCX.', 'success');
+                      onToast('Custom note drafted from Gemini + Halo. Edit fields, then preview PDF or save DOCX.', 'success');
                     }
                   } catch (err) {
                     onToast(getErrorMessage(err), 'error');

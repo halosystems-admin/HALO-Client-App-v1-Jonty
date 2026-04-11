@@ -156,7 +156,7 @@ export const EvidencePatientAttach: React.FC<Props> = ({
           aria-controls={open ? listboxId : undefined}
           aria-haspopup="dialog"
           onClick={() => setOpen((o) => !o)}
-          className="inline-flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200/90 bg-white px-3 py-2 text-left text-sm text-slate-800 shadow-sm outline-none transition hover:border-[#7ec4e0] focus-visible:ring-2 focus-visible:ring-[#b8dff0]/60 disabled:opacity-60 sm:flex-initial sm:min-w-[min(100%,280px)]"
+          className="inline-flex min-h-[40px] min-w-0 flex-1 items-center justify-between gap-2 rounded-lg border border-slate-200/90 bg-white px-2.5 py-1.5 text-left text-sm text-slate-800 shadow-sm outline-none transition hover:border-[#7ec4e0] focus-visible:ring-2 focus-visible:ring-[#b8dff0]/60 disabled:opacity-60 sm:flex-initial sm:min-w-[min(100%,280px)]"
         >
           <span className="flex min-w-0 items-center gap-2">
             <User className="h-4 w-4 shrink-0 text-[#3294c7]" aria-hidden />
@@ -171,7 +171,7 @@ export const EvidencePatientAttach: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => onSelectPatient(null)}
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
             aria-label="Clear patient context"
           >
             <X className="h-4 w-4" />

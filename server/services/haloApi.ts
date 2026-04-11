@@ -160,7 +160,10 @@ function normalizeNotesResponse(data: unknown, templateId: string): HaloNote[] {
         ...(fields && fields.length > 0 ? { fields } : {}),
         ...(rawData !== undefined ? { rawData } : {}),
       };
-    }).filter(n => n.content.length > 0);
+    }).filter(
+      (n) =>
+        n.content.length > 0 || Boolean(n.fields && n.fields.length > 0)
+    );
   }
 
   const obj = data as Record<string, unknown>;

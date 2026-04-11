@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import type { EvidenceQueryResponse } from '../../../../shared/types';
 import { EvidenceAnswerTab } from './EvidenceAnswerTab';
 import { EvidenceLinksTab } from './EvidenceLinksTab';
-import { EvidenceImagesTab } from './EvidenceImagesTab';
 
-type ResultTab = 'answer' | 'links' | 'images';
+type ResultTab = 'answer' | 'links';
 
 interface Props {
   data: EvidenceQueryResponse;
@@ -14,7 +13,6 @@ interface Props {
 const tabs: { id: ResultTab; label: string }[] = [
   { id: 'answer', label: 'Answer' },
   { id: 'links', label: 'Links' },
-  { id: 'images', label: 'Images' },
 ];
 
 export const EvidenceResultShell: React.FC<Props> = ({ data, hasPatient }) => {
@@ -35,7 +33,7 @@ export const EvidenceResultShell: React.FC<Props> = ({ data, hasPatient }) => {
         aria-label="Evidence result sections"
       >
         <div className="flex gap-1 overflow-x-auto pb-px">
-          {tabs.map(tab => {
+          {tabs.map((tab) => {
             const selected = activeTab === tab.id;
             return (
               <button
@@ -72,11 +70,6 @@ export const EvidenceResultShell: React.FC<Props> = ({ data, hasPatient }) => {
         {activeTab === 'links' && (
           <div role="tabpanel" id="evidence-panel-links" aria-labelledby="evidence-tab-links">
             <EvidenceLinksTab sources={data.sources} highlightId={null} />
-          </div>
-        )}
-        {activeTab === 'images' && (
-          <div role="tabpanel" id="evidence-panel-images" aria-labelledby="evidence-tab-images">
-            <EvidenceImagesTab images={data.images} />
           </div>
         )}
       </div>
