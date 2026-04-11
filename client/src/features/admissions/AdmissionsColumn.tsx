@@ -90,7 +90,7 @@ export const AdmissionsColumn: React.FC<Props> = ({
               onKeyDown={(event) => {
                 if (event.key === 'Enter') onRenameSubmit();
               }}
-              className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-800 outline-none focus:border-cyan-400"
+              className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-base font-semibold text-slate-800 outline-none focus:border-cyan-400 md:text-sm"
             />
           ) : (
             <>

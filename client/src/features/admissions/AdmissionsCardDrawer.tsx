@@ -139,7 +139,7 @@ export const AdmissionsCardDrawer: React.FC<Props> = ({
                   setDrawerDraft((prev) => (prev ? { ...prev, diagnosis: event.target.value } : prev))
                 }
                 placeholder="#CAP"
-                className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white"
+                className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white md:text-sm"
               />
             </section>
 
@@ -189,7 +189,7 @@ export const AdmissionsCardDrawer: React.FC<Props> = ({
                     }
                   }}
                   placeholder="Add co-managing doctor"
-                  className="h-10 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white"
+                  className="h-10 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white md:text-sm"
                 />
                 <button
                   type="button"
@@ -248,7 +248,7 @@ export const AdmissionsCardDrawer: React.FC<Props> = ({
                     }
                   }}
                   placeholder="Add tag"
-                  className="h-10 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white"
+                  className="h-10 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white md:text-sm"
                 />
                 <button
                   type="button"
@@ -338,7 +338,7 @@ export const AdmissionsCardDrawer: React.FC<Props> = ({
                     }
                   }}
                   placeholder="Add task"
-                  className="h-10 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white"
+                  className="h-10 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white md:text-sm"
                 />
                 <button
                   type="button"

@@ -79,7 +79,7 @@ export const AdmissionsAddPatientModal: React.FC<Props> = ({
                 value={newCardSearch}
                 onChange={(event) => newCardSearchChange(event.target.value)}
                 placeholder="Search name, DOB, or folder number..."
-                className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white"
+                className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 text-base text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white md:text-sm"
               />
             </label>
           </div>
@@ -124,7 +124,7 @@ export const AdmissionsAddPatientModal: React.FC<Props> = ({
                 value={newCardDiagnosis}
                 onChange={(event) => newCardDiagnosisChange(event.target.value)}
                 placeholder="#Sepsis"
-                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300"
+                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 md:text-sm"
               />
             </div>
             <div>
@@ -134,7 +134,7 @@ export const AdmissionsAddPatientModal: React.FC<Props> = ({
               <select
                 value={newCardColumnId || ''}
                 onChange={(event) => newCardColumnIdChange(event.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300"
+                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 md:text-sm"
               >
                 {boardColumns.map((column) => (
                   <option key={column.id} value={column.id}>
@@ -151,7 +151,7 @@ export const AdmissionsAddPatientModal: React.FC<Props> = ({
                 value={newCardDoctorsInput}
                 onChange={(event) => newCardDoctorsInputChange(event.target.value)}
                 placeholder="Comma separated"
-                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300"
+                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 md:text-sm"
               />
             </div>
             <div>
@@ -162,7 +162,7 @@ export const AdmissionsAddPatientModal: React.FC<Props> = ({
                 value={newCardTagsInput}
                 onChange={(event) => newCardTagsInputChange(event.target.value)}
                 placeholder="critical, bloods"
-                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300"
+                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 md:text-sm"
               />
             </div>
           </div>

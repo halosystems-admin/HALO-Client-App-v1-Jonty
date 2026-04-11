@@ -8,7 +8,7 @@ import { checkAuth, getLoginUrl, logout, fetchAllPatients, warmAndListFiles, cre
 import type { Patient, UserSettings, CalendarEvent } from '../../shared/types';
 import type { StickerExtractedData } from './services/api';
 import type { UploadHudState } from './components/UploadHud';
-import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, ScanLine, Loader2 } from 'lucide-react';
+import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, ScanLine, Loader2, Menu } from 'lucide-react';
 import { CalendarPage } from './pages/CalendarPage';
 import { AdmissionsPage } from './pages/AdmissionsPage';
 import { EvidencePage } from './pages/EvidencePage';
@@ -72,6 +72,9 @@ export const App = () => {
   });
   const [uploadHudState, setUploadHudState] = useState<UploadHudState | null>(null);
   const [workspaceIntent, setWorkspaceIntent] = useState<WorkspaceNavigationIntent | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -88,6 +91,15 @@ export const App = () => {
 
     return () => window.clearTimeout(timeoutId);
   }, [uploadHudState]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     if (userSettings?.modules?.admissions === false && activeMainView === 'admissions') {
@@ -369,11 +381,21 @@ export const App = () => {
   const activePatient = patients.find(p => p.id === selectedPatientId);
   const admissionsEnabled = userSettings?.modules?.admissions ?? false;
   const evidenceEnabled = userSettings?.modules?.evidence !== false;
-  const hideSidebarOnMobile = activeMainView === 'workspace' && Boolean(selectedPatientId);
+
+  const mobileNavTitle =
+    activeMainView === 'calendar'
+      ? 'Calendar'
+      : activeMainView === 'admissions'
+        ? 'Admissions'
+        : activeMainView === 'evidence'
+          ? 'Evidence'
+          : activePatient
+            ? activePatient.name
+            : 'Patients';
 
   return (
     <div className="relative flex h-dvh min-h-dvh overflow-hidden bg-slate-100 font-sans text-slate-900">
-      <div className={`${hideSidebarOnMobile ? 'hidden md:flex' : 'flex'} h-dvh min-h-0 shrink-0 z-20`}>
+      <div className="hidden h-dvh min-h-0 shrink-0 z-20 md:flex">
         <Sidebar
           patients={patients}
           selectedPatientId={selectedPatientId}
@@ -381,27 +403,118 @@ export const App = () => {
           onSelectPatient={(id) => {
             setActiveMainView('workspace');
             selectPatient(id);
+            closeMobileMenu();
           }}
-          onCreatePatient={openCreateModal}
+          onCreatePatient={() => {
+            openCreateModal();
+            closeMobileMenu();
+          }}
           onDeletePatient={handleDeleteRequest}
           onLogout={handleLogout}
           onOpenSettings={() => setShowSettings(true)}
           userEmail={userEmail}
           activeMainView={activeMainView}
-          onOpenPatients={() => setActiveMainView('workspace')}
-          onOpenCalendar={() => setActiveMainView('calendar')}
+          onOpenPatients={() => {
+            setActiveMainView('workspace');
+            closeMobileMenu();
+          }}
+          onOpenCalendar={() => {
+            setActiveMainView('calendar');
+            closeMobileMenu();
+          }}
           admissionsEnabled={admissionsEnabled}
-          onOpenAdmissions={() => setActiveMainView('admissions')}
+          onOpenAdmissions={() => {
+            setActiveMainView('admissions');
+            closeMobileMenu();
+          }}
           evidenceEnabled={evidenceEnabled}
-          onOpenEvidence={() => setActiveMainView('evidence')}
+          onOpenEvidence={() => {
+            setActiveMainView('evidence');
+            closeMobileMenu();
+          }}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         />
       </div>
 
-      <div
-        className={`relative flex min-h-0 flex-1 flex-col h-dvh ${activeMainView === 'workspace' && !selectedPatientId ? 'hidden md:flex' : 'flex'}`}
-      >
+      {mobileMenuOpen && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 cursor-default bg-slate-900/40 md:hidden"
+            aria-label="Close menu"
+            onClick={closeMobileMenu}
+          />
+          <div className="fixed left-0 top-0 z-50 flex h-dvh w-[min(100vw,288px)] shadow-2xl md:hidden">
+            <Sidebar
+              patients={patients}
+              selectedPatientId={selectedPatientId}
+              recentPatientIds={recentPatientIds}
+              onSelectPatient={(id) => {
+                setActiveMainView('workspace');
+                selectPatient(id);
+                closeMobileMenu();
+              }}
+              onCreatePatient={() => {
+                openCreateModal();
+                closeMobileMenu();
+              }}
+              onDeletePatient={handleDeleteRequest}
+              onLogout={handleLogout}
+              onOpenSettings={() => {
+                setShowSettings(true);
+                closeMobileMenu();
+              }}
+              userEmail={userEmail}
+              activeMainView={activeMainView}
+              onOpenPatients={() => {
+                setActiveMainView('workspace');
+                closeMobileMenu();
+              }}
+              onOpenCalendar={() => {
+                setActiveMainView('calendar');
+                closeMobileMenu();
+              }}
+              admissionsEnabled={admissionsEnabled}
+              onOpenAdmissions={() => {
+                setActiveMainView('admissions');
+                closeMobileMenu();
+              }}
+              evidenceEnabled={evidenceEnabled}
+              onOpenEvidence={() => {
+                setActiveMainView('evidence');
+                closeMobileMenu();
+              }}
+              collapsed={false}
+              onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+              inMobileDrawer
+            />
+          </div>
+        </>
+      )}
+
+      <div className="pointer-events-none fixed left-0 right-0 top-0 z-30 flex md:hidden">
+        <div
+          className="pointer-events-auto flex w-full items-center gap-2 border-b border-slate-200/90 bg-white/95 px-2 py-2 shadow-sm backdrop-blur-md"
+          style={{
+            paddingTop: 'max(0.5rem, env(safe-area-inset-top))',
+            paddingLeft: 'max(0.5rem, env(safe-area-inset-left))',
+            paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Open menu"
+          >
+            <Menu size={22} strokeWidth={2} />
+          </button>
+          <span className="min-w-0 truncate text-sm font-semibold text-slate-800">{mobileNavTitle}</span>
+        </div>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1 flex-col h-dvh pt-[calc(2.75rem+env(safe-area-inset-top))] md:pt-0">
         {activeMainView === 'calendar' ? (
           <CalendarPage
             patients={patients}

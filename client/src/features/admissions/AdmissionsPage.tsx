@@ -4,6 +4,7 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -62,7 +63,12 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onOpenPatie
   const addWardSectionRef = useRef<HTMLDivElement>(null);
   const newWardInputRef = useRef<HTMLInputElement>(null);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 225, tolerance: 8 },
+    })
+  );
 
   const scrollToAddWard = useCallback(() => {
     addWardSectionRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'end', block: 'nearest' });
@@ -460,7 +466,7 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onOpenPatie
         onAddWardRequest={scrollToAddWard}
       />
 
-      <div className="min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden scroll-pl-4 scroll-pr-4 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-6">
+      <div className="min-h-0 flex-1 snap-x snap-proximity overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-pl-4 scroll-pr-4 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] [touch-action:pan-x] md:snap-mandatory md:px-6">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
@@ -507,7 +513,7 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onOpenPatie
                     if (event.key === 'Enter') void handleAddWard();
                   }}
                   placeholder="e.g. HDU"
-                  className="mt-3 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-cyan-300"
+                  className="mt-3 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition focus:border-cyan-300 md:text-sm"
                 />
                 <button
                   type="button"

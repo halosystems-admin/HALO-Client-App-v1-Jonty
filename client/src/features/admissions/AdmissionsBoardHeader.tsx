@@ -60,7 +60,7 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
               value={boardSearch}
               onChange={(event) => onBoardSearchChange(event.target.value)}
               placeholder="Search patients, tags, doctors..."
-              className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 text-base text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white md:text-sm"
             />
           </label>
           <label className="flex min-w-0 flex-col gap-1 sm:min-w-[200px]">
@@ -70,7 +70,7 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
             <select
               value={doctorFilter}
               onChange={(e) => onDoctorFilterChange(e.target.value)}
-              className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 outline-none transition focus:border-cyan-300 focus:bg-white"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-base text-slate-800 outline-none transition focus:border-cyan-300 focus:bg-white md:text-sm"
             >
               <option value="">All doctors</option>
               {coManagingDoctorOptions.map((name) => (

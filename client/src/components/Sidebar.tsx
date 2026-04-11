@@ -26,6 +26,8 @@ interface SidebarProps {
   onOpenEvidence?: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** When true, hides the desktop collapse control (mobile drawer). */
+  inMobileDrawer?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -47,6 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenEvidence,
   collapsed = false,
   onToggleCollapse,
+  inMobileDrawer = false,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [aiSearchResults, setAiSearchResults] = useState<string[] | null>(null);
@@ -178,17 +181,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </p>
             </div>
           )}
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className={`inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${
-              collapsed ? '' : 'ml-auto'
-            }`}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
-          </button>
+          {!inMobileDrawer && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className={`inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${
+                collapsed ? '' : 'ml-auto'
+              }`}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -244,7 +249,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   placeholder="Search patients..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  className="w-full bg-slate-50 text-[13px] pl-8 pr-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-100 transition-all placeholder:text-slate-400"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-base outline-none transition-all placeholder:text-slate-400 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-100 md:text-[13px]"
                 />
                 {isAiSearching && (
                   <Loader2

@@ -148,8 +148,38 @@ export const CalendarPage: React.FC<Props> = ({
   const [attachmentFiles, setAttachmentFiles] = useState<DriveFile[]>([]);
   const [attachmentLoading, setAttachmentLoading] = useState(false);
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>([]);
+  const [isMobileLayout, setIsMobileLayout] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false
+  );
+  const swipeTouchStart = useRef<{ x: number; y: number } | null>(null);
 
   const timeZone = useMemo(getBrowserTimeZone, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const apply = () => setIsMobileLayout(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      const api = calendarRef.current?.getApi();
+      if (!api) {
+        requestAnimationFrame(run);
+        return;
+      }
+      const next = isMobileLayout ? 'timeGridDay' : 'timeGridWeek';
+      if (api.view.type !== next) api.changeView(next);
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isMobileLayout]);
 
   useEffect(() => {
     setPickerMonth(startOfMonth(currentDate));
@@ -204,6 +234,30 @@ export const CalendarPage: React.FC<Props> = ({
     if (direction === 'next') api.next();
     if (direction === 'today') api.today();
   }, []);
+
+  const handleCalendarSwipeStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    swipeTouchStart.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+  }, []);
+
+  const handleCalendarSwipeEnd = useCallback(
+    (e: React.TouchEvent) => {
+      const start = swipeTouchStart.current;
+      swipeTouchStart.current = null;
+      if (!start || !isMobileLayout) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (Math.abs(dx) < 56) return;
+      if (Math.abs(dx) < Math.abs(dy) * 1.15) return;
+      if (dx > 0) handleMoveCalendar('prev');
+      else handleMoveCalendar('next');
+    },
+    [isMobileLayout, handleMoveCalendar]
+  );
 
   const handlePickDate = useCallback((date: Date) => {
     calendarRef.current?.getApi().gotoDate(date);
@@ -419,7 +473,49 @@ export const CalendarPage: React.FC<Props> = ({
 
   return (
     <div className="halo-calendar-page flex h-full min-h-0 flex-col bg-[linear-gradient(180deg,#f6fbfe_0%,#edf7fb_100%)]">
-      <div className="border-b border-[#dceaf2] bg-white/92 backdrop-blur-sm">
+      <div className="border-b border-[#dceaf2] bg-white/92 backdrop-blur-sm md:hidden">
+        <div className="mx-auto flex w-full max-w-[1500px] items-center justify-between gap-3 px-3 py-2.5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#6aa9c6]">Schedule</p>
+            <p className="truncate text-base font-semibold leading-tight text-slate-800">{selectedDateLabel}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => handleMoveCalendar('prev')}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-[#eff8fc] hover:text-[#3794c6]"
+              aria-label="Previous day"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMoveCalendar('today')}
+              className="inline-flex h-9 items-center justify-center rounded-xl bg-[#39a9c9] px-3 text-xs font-semibold text-white"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMoveCalendar('next')}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-[#eff8fc] hover:text-[#3794c6]"
+              aria-label="Next day"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+        {loading && (
+          <div className="flex justify-end px-3 pb-2">
+            <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Refreshing
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="hidden border-b border-[#dceaf2] bg-white/92 backdrop-blur-sm md:block">
         <div className="mx-auto flex w-full max-w-[1500px] flex-wrap items-center justify-between gap-4 px-5 py-5 md:px-8">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-[linear-gradient(180deg,#ebf9fd_0%,#dff4fb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
@@ -469,9 +565,9 @@ export const CalendarPage: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden px-4 py-4 md:px-6 md:py-6">
+      <div className="flex-1 overflow-hidden px-2 py-2 md:px-6 md:py-6">
         <div className="mx-auto grid h-full max-w-[1500px] min-h-0 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-          <aside className="flex min-h-[340px] flex-col overflow-hidden rounded-[30px] border border-[#dbe9f1] bg-white p-5 shadow-[0_22px_55px_-36px_rgba(15,23,42,0.4)]">
+          <aside className="hidden min-h-[340px] flex-col overflow-hidden rounded-[30px] border border-[#dbe9f1] bg-white p-5 shadow-[0_22px_55px_-36px_rgba(15,23,42,0.4)] md:flex">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#86adc2]">
@@ -557,25 +653,25 @@ export const CalendarPage: React.FC<Props> = ({
             </div>
           </aside>
 
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-[32px] border border-[#dbe9f1] bg-white shadow-[0_24px_60px_-35px_rgba(15,23,42,0.35)]">
-            <div className="border-b border-[#e6eff5] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfd_100%)] px-4 py-4 md:px-6">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#dbe9f1] bg-white shadow-[0_24px_60px_-35px_rgba(15,23,42,0.35)] md:rounded-[32px]">
+            <div className="hidden border-b border-[#e6eff5] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfd_100%)] px-3 py-3 md:block md:px-6 md:py-4">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex flex-col gap-2">
+                <div className="hidden flex-col gap-2 md:flex">
                   <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[#eef8fc] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#67a7c7]">
                     <CalendarIcon className="h-3.5 w-3.5" />
                     Day / Week / Month
                   </div>
                   <div>
-                    <h2 className="text-3xl font-semibold tracking-tight text-slate-800">
+                    <h2 className="text-2xl font-semibold tracking-tight text-slate-800 md:text-3xl">
                       {currentTitle || 'Schedule'}
                     </h2>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 hidden text-sm text-slate-500 md:block">
                       Drag to move, resize to extend, and click any booking to edit it.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                <div className="hidden flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end md:flex">
                   <div className="inline-flex items-center rounded-[22px] border border-[#d7e6ef] bg-white p-1 shadow-sm">
                     <button
                       type="button"
@@ -602,7 +698,7 @@ export const CalendarPage: React.FC<Props> = ({
                     </button>
                   </div>
 
-                  <div className="inline-flex items-center rounded-[22px] border border-[#d7e6ef] bg-[#f8fbfd] p-1 shadow-sm">
+                  <div className="hidden items-center rounded-[22px] border border-[#d7e6ef] bg-[#f8fbfd] p-1 shadow-sm md:inline-flex">
                     {VIEW_OPTIONS.map((option) => (
                       <button
                         key={option.id}
@@ -622,12 +718,16 @@ export const CalendarPage: React.FC<Props> = ({
               </div>
             </div>
 
-            <div className="flex-1 overflow-hidden bg-[#f5fafc] p-3 md:p-4">
-              <div className="halo-calendar h-full overflow-hidden rounded-[26px] border border-[#dce9f1] bg-white">
+            <div
+              className="flex-1 overflow-hidden bg-[#f5fafc] p-2 md:p-4"
+              onTouchStart={handleCalendarSwipeStart}
+              onTouchEnd={handleCalendarSwipeEnd}
+            >
+              <div className="halo-calendar h-full min-h-0 overflow-hidden rounded-[20px] border border-[#dce9f1] bg-white md:rounded-[26px]">
                 <FullCalendar
                   ref={calendarRef}
                   plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-                  initialView="timeGridWeek"
+                  initialView={isMobileLayout ? 'timeGridDay' : 'timeGridWeek'}
                   headerToolbar={false}
                   height="100%"
                   events={fcEvents}
