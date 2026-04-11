@@ -27,7 +27,7 @@ if (config.isProduction) {
 // --- Global Rate Limiter ---
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // 300 requests per window
+  max: 2000, // generous for SPA + mobile (many assets/API calls)
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again later.' },
@@ -36,7 +36,7 @@ const globalLimiter = rateLimit({
 // --- AI Route Rate Limiter (stricter) ---
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 20, // 20 AI requests per minute
+  max: 80, // Gemini + Halo calls per minute per IP
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'AI rate limit reached. Please wait before trying again.' },

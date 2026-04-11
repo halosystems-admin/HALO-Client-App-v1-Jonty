@@ -105,10 +105,10 @@ export const EvidencePanel: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="border-t border-[#e6eff5] bg-white/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-md md:px-8 md:pb-4">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3 rounded-2xl border border-[#e4edf3]/80 bg-[#f8fbfd] p-3 shadow-sm md:p-4">
+      <div className="border-t border-[#e6eff5] bg-white/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:px-8 md:pb-3 md:pt-3">
+        <div className="mx-auto flex max-w-3xl flex-col gap-2 rounded-xl border border-[#e4edf3]/70 bg-[#f8fbfd] p-2 shadow-sm md:gap-2.5 md:p-3">
           <div>
-            <p className="mb-2 text-xs font-medium text-slate-500 md:text-[13px]">
+            <p className="mb-1 text-[11px] font-medium text-slate-500 md:text-xs">
               <span className="md:hidden">Patient </span>
               <span className="hidden md:inline">Patient context </span>
               <span className="text-slate-400">(optional)</span>
@@ -142,10 +142,10 @@ export const EvidencePanel: React.FC<Props> = ({
                 ? 'Ask an evidence question (patient summary and folder may be used when relevant)…'
                 : 'Ask an evidence question…'
             }
-            className="w-full resize-none rounded-xl border border-[#d8e7ef] bg-white px-4 py-3 text-sm text-slate-800 shadow-inner outline-none ring-0 transition placeholder:text-slate-400 focus:border-[#7ec4e0] focus:ring-2 focus:ring-[#b8dff0]/60 disabled:opacity-60"
+            className="w-full resize-none rounded-lg border border-[#d8e7ef] bg-white px-3 py-2 text-sm leading-snug text-slate-800 shadow-inner outline-none ring-0 transition placeholder:text-slate-400 focus:border-[#7ec4e0] focus:ring-1 focus:ring-[#b8dff0]/50 disabled:opacity-60"
           />
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-center text-[11px] text-slate-400 sm:max-w-[min(100%,20rem)] sm:text-left">
               {hasPatient ? (
                 <>

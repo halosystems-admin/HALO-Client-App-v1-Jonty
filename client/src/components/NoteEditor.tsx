@@ -71,7 +71,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   const [autosaveMsg, setAutosaveMsg] = useState<string | null>(null);
   const busy = status === AppStatus.FILING || status === AppStatus.SAVING;
   const activeFields = activeNote?.fields ?? [];
-  const activeViewMode = activeNote ? viewModes[activeNote.noteId] ?? 'preview' : 'preview';
+  const activeViewMode = activeNote
+    ? viewModes[activeNote.noteId] ?? (activeNote.fields?.length ? 'edit' : 'preview')
+    : 'preview';
   const activePreviewUrl = activeNote ? previewUrls[activeNote.noteId] : undefined;
   const activePreviewError = activeNote ? previewErrors[activeNote.noteId] : undefined;
   const activePreviewSignature = activeNote ? previewSignatures[activeNote.noteId] : undefined;

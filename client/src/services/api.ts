@@ -548,6 +548,20 @@ export const generateNotePreview = (params: { template_id: string; text: string;
     body: JSON.stringify({ ...params, return_type: 'note' }),
   });
 
+/** Gemini drafts from patient context + optional transcript, then Halo structured note (letterhead on DOCX/PDF export). */
+export const generateCustomScribeNote = (params: {
+  patientId: string;
+  prompt: string;
+  transcript?: string;
+  consultContext?: string;
+  template_id?: string;
+  user_id?: string;
+}) =>
+  request<{ notes: HaloNote[] }>('/api/ai/custom-scribe-note', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+
 /** Generate a PDF preview for the current note state without saving it to Drive. */
 export const previewNotePdf = (params: {
   patientId: string;

@@ -441,13 +441,13 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
   const isActive = status === 'recording' || status === 'paused' || status === 'finishing';
 
   return (
-    <div className="flex w-full flex-col gap-2 sm:w-auto">
+    <div className="flex w-full flex-col gap-1.5 sm:w-auto">
       <div className="flex w-full items-center gap-2 md:w-auto">
         {(status === 'recording' || status === 'paused') && (
           <button
             type="button"
             onClick={togglePause}
-            className="hidden h-14 items-center gap-2 rounded-[22px] border border-[#d7e8f1] bg-white px-4 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b] md:inline-flex"
+            className="hidden h-11 items-center gap-2 rounded-xl border border-[#d7e8f1] bg-white px-3 text-xs font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b] md:inline-flex"
           >
             {status === 'paused' ? (
               <>
@@ -469,7 +469,7 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
               : () => void startLive()
           }
           disabled={isBusy}
-          className={`inline-flex h-14 w-full min-w-0 items-center gap-3 overflow-hidden rounded-[22px] border px-4 text-sm font-semibold shadow-sm transition md:w-[340px] ${
+          className={`inline-flex h-11 w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl border px-3 text-xs font-semibold shadow-sm transition md:w-[260px] md:px-3.5 md:text-[13px] ${
             status === 'recording'
               ? 'border-rose-200 bg-[linear-gradient(135deg,#fff5f6_0%,#ffe7ea_100%)] text-rose-700 shadow-rose-100/70'
               : status === 'paused'
@@ -480,7 +480,7 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
           } ${isBusy ? 'cursor-not-allowed opacity-80' : ''}`}
         >
           <div
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
               status === 'recording'
                 ? 'bg-rose-600 text-white'
                 : status === 'paused'

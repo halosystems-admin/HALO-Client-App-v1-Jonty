@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/requireAuth';
+import { config } from '../config';
+import { generateNote } from '../services/haloApi';
 import { generateText, generateTextStream, analyzeImage, transcribeAudio, safeJsonParse } from '../services/gemini';
 import { isDeepgramAvailable, transcribeWithDeepgram } from '../services/deepgram';
 import { fetchAllFilesInFolder, extractTextFromBuffer, extractTextFromFile } from '../services/drive';
@@ -387,6 +389,58 @@ router.post('/chat', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Chat error:', err);
     res.json({ reply: 'I apologize, but I encountered an error processing your question. Please try again.' });
+  }
+});
+
+// POST /custom-scribe-note — Gemini drafts from patient context + transcript, then Halo generate_note for structured fields / letterhead DOCX path
+router.post('/custom-scribe-note', async (req: Request, res: Response) => {
+  try {
+    const { patientId, prompt, transcript, consultContext, template_id, user_id } = req.body as {
+      patientId?: string;
+      prompt?: string;
+      transcript?: string;
+      consultContext?: string;
+      template_id?: string;
+      user_id?: string;
+    };
+
+    if (!patientId || typeof prompt !== 'string' || !prompt.trim()) {
+      res.status(400).json({ error: 'patientId and prompt are required.' });
+      return;
+    }
+
+    const token = req.session.accessToken!;
+    let question = `The clinician requested the following document be drafted:\n\n"${prompt.trim()}"\n\n`;
+    if (transcript?.trim()) {
+      question += `--- Consultation transcript ---\n${transcript.trim()}\n\n`;
+    }
+    if (consultContext?.trim()) {
+      question += `--- Additional context from clinician ---\n${consultContext.trim()}\n\n`;
+    }
+    question +=
+      'Produce a complete, formal clinical document (letter, motivation, or note) suitable for the patient record. Use professional medical language. Output only the document body—no preamble or meta-commentary.';
+
+    const fullPrompt = await buildChatContext(token, patientId, question, [], []);
+    const draftText = await generateText(fullPrompt);
+    if (!draftText?.trim()) {
+      res.status(502).json({ error: 'Draft generation returned empty text. Please try again.' });
+      return;
+    }
+
+    const tid = template_id?.trim() || 'jon_note';
+    const uid = user_id?.trim() || config.haloUserId;
+    const notes = await generateNote({
+      user_id: uid,
+      template_id: tid,
+      text: draftText.trim(),
+      return_type: 'note',
+    });
+
+    res.json({ notes });
+  } catch (err) {
+    console.error('custom-scribe-note error:', err);
+    const message = err instanceof Error ? err.message : 'Failed to generate structured note.';
+    res.status(500).json({ error: message });
   }
 });
 
