@@ -117,3 +117,70 @@ Avoid speculation and do not invent diagnoses that are not supported by the text
 Return ONLY a raw Markdown string (no JSON).
 `;
 }
+
+export function patientSummarySourcePrompt(params: {
+  patientName: string;
+  sourceType: 'file' | 'consultation';
+  sourceName: string;
+  sourceDate: string;
+  content: string;
+}): string {
+  const truncated = params.content.substring(0, MAX_CONTENT_LENGTH);
+  return `
+You are HALO, building a persistent longitudinal patient summary for ${params.patientName}.
+
+Source type: ${params.sourceType}
+Source name: ${params.sourceName}
+Source date: ${params.sourceDate}
+
+Clinical source content:
+${truncated}
+
+Extract the clinically meaningful update from this source.
+Return ONLY raw JSON in this exact shape:
+{
+  "title": "short source label",
+  "bullets": ["clinical update 1", "clinical update 2", "clinical update 3"]
+}
+
+Rules:
+- Use 1 to 3 short bullets only.
+- Focus on diagnoses, procedures, key findings, treatment changes, and meaningful follow-up context.
+- Avoid speculation.
+- If the source has little value, still return the single most useful bullet you can support from the text.
+`;
+}
+
+export function patientSummaryMergePrompt(params: {
+  patientName: string;
+  currentSnapshot: string[];
+  recentTimeline: Array<{ date: string; title: string; bullets: string[] }>;
+  newUpdate: { title: string; date: string; bullets: string[] };
+}): string {
+  const recentTimelineText = params.recentTimeline
+    .map((entry) => `- ${entry.date} | ${entry.title}: ${entry.bullets.join(' ')}`)
+    .join('\n');
+  return `
+You are HALO, updating the current longitudinal patient snapshot for ${params.patientName}.
+
+Current snapshot bullets:
+${JSON.stringify(params.currentSnapshot)}
+
+Recent timeline context:
+${recentTimelineText || '(none)'}
+
+Newest update:
+${JSON.stringify(params.newUpdate)}
+
+Return ONLY raw JSON in this exact shape:
+{
+  "snapshot": ["bullet 1", "bullet 2", "bullet 3", "bullet 4"]
+}
+
+Rules:
+- Return 3 to 5 concise bullets.
+- Keep this as the CURRENT overall picture of the patient, not a full timeline.
+- Prefer durable clinically relevant facts over administrative noise.
+- Incorporate the newest update when it materially changes the current picture.
+`;
+}

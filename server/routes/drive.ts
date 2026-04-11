@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/requireAuth';
 import { config } from '../config';
 import {
   driveRequest,
+  findFileInFolder,
   getHaloRootFolder,
   getOrCreatePatientNotesFolder,
   sanitizeString,
@@ -11,14 +12,22 @@ import {
   parseFolderString,
   parsePatientFolder,
 } from '../services/drive';
+import { parseSessionNotes, parseSessionsJson } from '../utils/scribeSessions';
+import {
+  ensurePatientSummaryUpToDate,
+  markPatientSummaryDirty,
+  refreshPatientSummaryInBackground,
+  SUMMARY_STATE_FILE_NAME,
+} from '../services/patientSummary';
+import {
+  loadAdmissionsBoard,
+  normalizeAdmissionsBoard,
+  saveAdmissionsBoard,
+} from '../services/admissionsBoard';
 // Scheduler disabled; run-scheduler and scheduler-status kept for optional manual use
 import { runSchedulerNow, getSchedulerStatus } from '../jobs/scheduler';
-import type {
-  JsonValue,
-  NoteField,
-  ScribeSession,
-  ScribeSessionNote,
-} from '../../shared/types';
+import { DEFAULT_USER_SETTINGS, normalizeUserSettings } from '../../shared/types';
+import type { AdmissionsBoard, ScribeSession } from '../../shared/types';
 
 const router = Router();
 router.use(requireAuth);
@@ -41,6 +50,7 @@ const DEFAULT_PAGE_SIZE = 50;
 
 // Internal app file — never show in patient folder listing
 const SESSIONS_FILE_NAME = 'halo_scribe_sessions.json';
+const ADMISSIONS_BOARD_FILE_NAME = 'halo_admissions_board.json';
 
 // In-memory cache for first page of file list (per folder). Makes repeat views instant.
 const FILES_CACHE_TTL_MS = 30_000; // 30 seconds
@@ -76,68 +86,8 @@ function hasOwnField(body: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, key);
 }
 
-function sanitizeJsonValue(value: unknown, depth = 0): JsonValue | undefined {
-  if (depth > 8) return undefined;
-  if (value === null) return null;
-  if (typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
-
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => sanitizeJsonValue(item, depth + 1))
-      .filter((item): item is JsonValue => item !== undefined);
-  }
-
-  if (typeof value === 'object') {
-    const out: Record<string, JsonValue> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      const sanitized = sanitizeJsonValue(item, depth + 1);
-      if (sanitized !== undefined) out[key] = sanitized;
-    }
-    return out;
-  }
-
-  return undefined;
-}
-
-function parseNoteFields(fieldsRaw: unknown): NoteField[] | undefined {
-  if (!Array.isArray(fieldsRaw)) return undefined;
-
-  const fields = fieldsRaw
-    .slice(0, 100)
-    .map((field: unknown) => {
-      const obj = field && typeof field === 'object' ? (field as Record<string, unknown>) : {};
-      const label = typeof obj.label === 'string' ? obj.label.slice(0, 300) : '';
-      const body = typeof obj.body === 'string' ? obj.body.slice(0, 20000) : '';
-      if (!label && !body) return null;
-      return { label, body };
-    })
-    .filter((field): field is NoteField => field !== null);
-
-  return fields.length > 0 ? fields : undefined;
-}
-
-function parseSessionNotes(notesRaw: unknown): ScribeSessionNote[] | undefined {
-  if (!Array.isArray(notesRaw)) return undefined;
-
-  const notes = notesRaw
-    .slice(0, 20)
-    .map((n: unknown) => {
-      const o = n && typeof n === 'object' ? (n as Record<string, unknown>) : {};
-      const fields = parseNoteFields(o.fields);
-      const rawData = sanitizeJsonValue(o.rawData);
-      return {
-        noteId: String(o.noteId ?? ''),
-        title: String(o.title ?? ''),
-        content: String(o.content ?? '').slice(0, 100000),
-        template_id: String(o.template_id ?? ''),
-        ...(fields ? { fields } : {}),
-        ...(rawData !== undefined ? { rawData } : {}),
-      };
-    })
-    .filter((note) => note.noteId || note.title || note.content || note.template_id);
-
-  return notes.length > 0 ? notes : undefined;
+function getRouteParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] : value || '';
 }
 
 // --- Routes ---
@@ -248,6 +198,8 @@ router.post('/patients', async (req: Request, res: Response) => {
     const medicalAid = sanitizeString(req.body.medicalAid);
     const medicalAidPlan = sanitizeString(req.body.medicalAidPlan);
     const medicalAidNumber = sanitizeString(req.body.medicalAidNumber);
+    const folderNumber = sanitizeString(req.body.folderNumber);
+    const idNumber = sanitizeString(req.body.idNumber);
 
     if (!name || name.length < 2) {
       res.status(400).json({ error: 'Patient name must be at least 2 characters.' });
@@ -279,6 +231,8 @@ router.post('/patients', async (req: Request, res: Response) => {
           ...(medicalAid ? { medicalAid } : {}),
           ...(medicalAidPlan ? { medicalAidPlan } : {}),
           ...(medicalAidNumber ? { medicalAidNumber } : {}),
+          ...(folderNumber ? { folderNumber } : {}),
+          ...(idNumber ? { idNumber } : {}),
         },
       }),
     });
@@ -293,6 +247,8 @@ router.post('/patients', async (req: Request, res: Response) => {
       medicalAid: medicalAid || undefined,
       medicalAidPlan: medicalAidPlan || undefined,
       medicalAidNumber: medicalAidNumber || undefined,
+      folderNumber: folderNumber || undefined,
+      idNumber: idNumber || undefined,
     });
   } catch (err) {
     console.error('Create patient error:', err);
@@ -323,6 +279,12 @@ router.patch('/patients/:id', async (req: Request, res: Response) => {
       : undefined;
     const medicalAidNumber = hasOwnField(body, 'medicalAidNumber')
       ? sanitizeString(body.medicalAidNumber)
+      : undefined;
+    const folderNumber = hasOwnField(body, 'folderNumber')
+      ? sanitizeString(body.folderNumber)
+      : undefined;
+    const idNumber = hasOwnField(body, 'idNumber')
+      ? sanitizeString(body.idNumber)
       : undefined;
 
     if (name !== undefined && name.length < 2) {
@@ -369,6 +331,8 @@ router.patch('/patients/:id', async (req: Request, res: Response) => {
     if (hasOwnField(body, 'medicalAidNumber')) {
       nextAppProperties.medicalAidNumber = medicalAidNumber || '';
     }
+    if (hasOwnField(body, 'folderNumber')) nextAppProperties.folderNumber = folderNumber || '';
+    if (hasOwnField(body, 'idNumber')) nextAppProperties.idNumber = idNumber || '';
 
     await fetch(`${driveApi}/files/${id}`, {
       method: 'PATCH',
@@ -482,7 +446,7 @@ router.get('/patients/:id/files', async (req: Request, res: Response) => {
     }
 
     const files = (data.files || [])
-      .filter((f) => f.name !== SESSIONS_FILE_NAME)
+      .filter((f) => f.name !== SESSIONS_FILE_NAME && f.name !== SUMMARY_STATE_FILE_NAME)
       .map((f) => ({
       id: f.id,
       name: f.name,
@@ -577,6 +541,7 @@ router.post('/patients/:id/warm-and-list', async (req: Request, res: Response) =
     const rawFiles = (data.files || []).filter(
       (f) =>
         (f.name !== SESSIONS_FILE_NAME) &&
+        (f.name !== SUMMARY_STATE_FILE_NAME) &&
         !(f.name.startsWith('.halo-warm-') && f.name.endsWith('.tmp'))
     );
     const files = rawFiles.map((f) => ({
@@ -607,9 +572,11 @@ router.post('/patients/:id/warm-and-list', async (req: Request, res: Response) =
 router.post('/patients/:id/upload', async (req: Request, res: Response) => {
   try {
     const token = req.session.accessToken!;
+    const patientFolderId = getRouteParam(req.params.id);
     const fileName = sanitizeString(req.body.fileName, 255);
     const fileType = sanitizeString(req.body.fileType, 100);
     const fileData = req.body.fileData as string;
+    const summaryPatientId = sanitizeString(req.body.patientId, 255) || patientFolderId;
 
     if (!fileName) {
       res.status(400).json({ error: 'File name is required.' });
@@ -632,7 +599,7 @@ router.post('/patients/:id/upload', async (req: Request, res: Response) => {
 
     const metadata = {
       name: fileName,
-      parents: [req.params.id],
+      parents: [patientFolderId],
       mimeType: fileType,
     };
 
@@ -666,8 +633,9 @@ router.post('/patients/:id/upload', async (req: Request, res: Response) => {
     }
 
     const data = (await uploadRes.json()) as { id: string; name: string; mimeType: string; webViewLink?: string };
-    const uploadFolderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    invalidateFilesCacheForFolder(uploadFolderId);
+    invalidateFilesCacheForFolder(patientFolderId);
+    await markPatientSummaryDirty(token, summaryPatientId);
+    void refreshPatientSummaryInBackground(token, summaryPatientId);
     res.json({
       id: data.id,
       name: data.name,
@@ -955,10 +923,68 @@ router.post('/patients/:id/sessions', async (req: Request, res: Response) => {
       });
     }
 
+    await markPatientSummaryDirty(token, folderId);
+    void refreshPatientSummaryInBackground(token, folderId);
+
     res.json({ sessions });
   } catch (err) {
     console.error('Save sessions error:', err);
     res.status(500).json({ error: 'Failed to save session.' });
+  }
+});
+
+// GET /patients/:id/summary
+router.get('/patients/:id/summary', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const patientId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { markdown, state } = await ensurePatientSummaryUpToDate(token, patientId);
+    res.json({
+      markdown,
+      lastUpdatedAt: state.lastUpdatedAt,
+    });
+  } catch (err) {
+    console.error('Load patient summary error:', err);
+    res.status(500).json({ error: 'Failed to load patient summary.' });
+  }
+});
+
+// GET /admissions-board
+router.get('/admissions-board', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const { board } = await loadAdmissionsBoard(token);
+    res.json({ board });
+  } catch (err) {
+    console.error('Load admissions board error:', err);
+    res.status(500).json({ error: 'Failed to load admissions board.' });
+  }
+});
+
+// PUT /admissions-board
+router.put('/admissions-board', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const incomingBoard = normalizeAdmissionsBoard(req.body);
+    const { board: currentBoard } = await loadAdmissionsBoard(token);
+
+    if (incomingBoard.version !== currentBoard.version) {
+      res.status(409).json({
+        error: 'Admissions board was updated elsewhere. Reload and try again.',
+        board: currentBoard,
+      });
+      return;
+    }
+
+    const savedBoard = await saveAdmissionsBoard(token, {
+      ...incomingBoard,
+      version: currentBoard.version + 1,
+    });
+
+    res.json({ board: savedBoard });
+  } catch (err) {
+    console.error('Save admissions board error:', err);
+    res.status(500).json({ error: 'Failed to save admissions board.' });
   }
 });
 
@@ -982,36 +1008,6 @@ async function findSessionsFile(token: string, patientFolderId: string): Promise
   return data.files && data.files.length > 0 ? data.files[0].id : null;
 }
 
-function parseSessionsJson(raw: unknown): ScribeSession[] {
-  if (!Array.isArray(raw)) return [];
-  return (raw as unknown[])
-    .map((item): ScribeSession | null => {
-      const obj = item as Partial<ScribeSession> & { notes?: unknown[] };
-      if (!obj || typeof obj !== 'object') return null;
-      if (
-        typeof obj.id !== 'string' ||
-        typeof obj.patientId !== 'string' ||
-        typeof obj.createdAt !== 'string' ||
-        typeof obj.transcript !== 'string'
-      ) {
-        return null;
-      }
-      const notes = parseSessionNotes(obj.notes);
-      return {
-        id: obj.id,
-        patientId: obj.patientId,
-        createdAt: obj.createdAt,
-        transcript: obj.transcript,
-        context: typeof obj.context === 'string' ? obj.context : undefined,
-        templates: Array.isArray(obj.templates) ? obj.templates.map(String) : undefined,
-        noteTitles: Array.isArray(obj.noteTitles) ? obj.noteTitles.map(String) : undefined,
-        notes,
-        mainComplaint: typeof obj.mainComplaint === 'string' ? obj.mainComplaint.trim().slice(0, 200) : undefined,
-      } as ScribeSession;
-    })
-    .filter((s): s is ScribeSession => s !== null);
-}
-
 // GET /settings
 router.get('/settings', async (req: Request, res: Response) => {
   try {
@@ -1020,14 +1016,14 @@ router.get('/settings', async (req: Request, res: Response) => {
     const fileId = await findSettingsFile(token, rootId);
 
     if (!fileId) {
-      res.json({ settings: null });
+      res.json({ settings: DEFAULT_USER_SETTINGS });
       return;
     }
 
     const dlRes = await fetch(`${driveApi}/files/${fileId}?alt=media`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const settings = await dlRes.json();
+    const settings = normalizeUserSettings((await dlRes.json()) as Partial<typeof DEFAULT_USER_SETTINGS>);
     res.json({ settings });
   } catch (err) {
     console.error('Load settings error:', err);
@@ -1039,7 +1035,7 @@ router.get('/settings', async (req: Request, res: Response) => {
 router.put('/settings', async (req: Request, res: Response) => {
   try {
     const token = req.session.accessToken!;
-    const settings = req.body;
+    const settings = normalizeUserSettings(req.body);
 
     if (!settings || typeof settings !== 'object') {
       res.status(400).json({ error: 'Settings object is required.' });

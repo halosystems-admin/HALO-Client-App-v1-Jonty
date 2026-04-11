@@ -24,6 +24,7 @@ import {
   getHaloTemplates,
   describeFile,
   fetchPatientSessions,
+  fetchPatientSummary,
   savePatientSession,
 } from '../services/api';
 import {
@@ -41,6 +42,12 @@ import type { UploadHudState } from '../components/UploadHud';
 import { getErrorMessage } from '../utils/formatting';
 
 const MAX_MAIN_COMPLAINT_LEN = 80;
+
+export interface WorkspaceNavigationIntent {
+  id: string;
+  tab: 'overview' | 'notes' | 'chat' | 'sessions';
+  freshSession?: boolean;
+}
 
 /** Extract a short main complaint from note content for session list title (e.g. "Ankle Fracture"). */
 function extractMainComplaint(content: string): string {
@@ -140,6 +147,54 @@ function normalizeHaloTemplates(raw: Record<string, unknown>): Array<{ id: strin
   });
 }
 
+function parsePatientSummaryMarkdown(markdown: string): {
+  lastUpdated: string | null;
+  snapshot: string[];
+  timeline: Array<{ heading: string; bullets: string[] }>;
+} {
+  const lines = markdown.split(/\r?\n/);
+  let currentSection: 'snapshot' | 'timeline' | null = null;
+  let currentTimeline: { heading: string; bullets: string[] } | null = null;
+  const snapshot: string[] = [];
+  const timeline: Array<{ heading: string; bullets: string[] }> = [];
+  let lastUpdated: string | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('Last updated:')) {
+      lastUpdated = line.replace('Last updated:', '').trim();
+      continue;
+    }
+    if (line === '## Current Snapshot') {
+      currentSection = 'snapshot';
+      currentTimeline = null;
+      continue;
+    }
+    if (line === '## Timeline') {
+      currentSection = 'timeline';
+      currentTimeline = null;
+      continue;
+    }
+    if (line.startsWith('### ')) {
+      currentTimeline = { heading: line.replace(/^###\s+/, ''), bullets: [] };
+      timeline.push(currentTimeline);
+      continue;
+    }
+    if (line.startsWith('- ')) {
+      const bullet = line.slice(2).trim();
+      if (!bullet) continue;
+      if (currentSection === 'snapshot') {
+        snapshot.push(bullet);
+      } else if (currentSection === 'timeline' && currentTimeline) {
+        currentTimeline.bullets.push(bullet);
+      }
+    }
+  }
+
+  return { lastUpdated, snapshot, timeline };
+}
+
 interface Props {
   patient: Patient;
   onBack: () => void;
@@ -148,9 +203,21 @@ interface Props {
   templateId?: string;
   onUploadHudChange?: (state: UploadHudState | null) => void;
   calendarPrepEvent?: CalendarEvent | null;
+  navigationIntent?: WorkspaceNavigationIntent | null;
+  onNavigationIntentHandled?: (intentId: string) => void;
 }
 
-export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, templateId: propTemplateId, onUploadHudChange, calendarPrepEvent }) => {
+export const PatientWorkspace: React.FC<Props> = ({
+  patient,
+  onBack,
+  onDataChange,
+  onToast,
+  templateId: propTemplateId,
+  onUploadHudChange,
+  calendarPrepEvent,
+  navigationIntent,
+  onNavigationIntentHandled,
+}) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [notes, setNotes] = useState<HaloNote[]>([]);
   const [templateId, setTemplateId] = useState(propTemplateId || 'clinical_note');
@@ -178,6 +245,8 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [sessions, setSessions] = useState<ScribeSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [patientSummaryMarkdown, setPatientSummaryMarkdown] = useState('');
+  const [patientSummaryLoading, setPatientSummaryLoading] = useState(false);
 
   // Derived "current" transcript that the UI shows and copies:
   // any completed segments (lastTranscript) plus the current live segment (if recording).
@@ -425,6 +494,20 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       .finally(() => {
         setSessionsLoading(false);
       });
+
+    if (activeTab === 'sessions') {
+      setPatientSummaryLoading(true);
+      fetchPatientSummary(patient.id)
+        .then((res) => {
+          setPatientSummaryMarkdown(res.markdown || '');
+        })
+        .catch(() => {
+          setPatientSummaryMarkdown('');
+        })
+        .finally(() => {
+          setPatientSummaryLoading(false);
+        });
+    }
   }, [activeTab, patient.id]);
 
   // Navigate into a subfolder
@@ -579,7 +662,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       }
 
       try {
-        const uploaded = await uploadFile(targetId, file, finalName);
+        const uploaded = await uploadFile(targetId, file, finalName, patient.id);
         updateUploadHud({
           phase: 'success',
           title: finalName,
@@ -933,6 +1016,18 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     setActiveTab('notes');
   }, []);
 
+  useEffect(() => {
+    if (!navigationIntent?.id) return;
+
+    if (navigationIntent.freshSession) {
+      prepareFreshRecordingSession();
+    } else {
+      setActiveTab(navigationIntent.tab);
+    }
+
+    onNavigationIntentHandled?.(navigationIntent.id);
+  }, [navigationIntent, onNavigationIntentHandled, prepareFreshRecordingSession]);
+
   const handleLiveTranscriptUpdate = useCallback((segment: string) => {
     // While recording, keep the live segment separate so we can append it
     // to any existing transcript once the doctor stops the recording.
@@ -1273,7 +1368,9 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       });
     }, stepMs);
     return () => clearInterval(id);
-  }, [isGeneratingNotes]);
+    }, [isGeneratingNotes]);
+
+  const parsedPatientSummary = parsePatientSummaryMarkdown(patientSummaryMarkdown);
 
   return (
     <div className="flex flex-col h-full bg-white relative w-full">
@@ -1397,85 +1494,173 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               onCreateFolder={() => setShowCreateFolderModal(true)}
             />
           ) : activeTab === 'sessions' ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Previous Sessions {sessions.length > 0 && `(${sessions.length})`}
-                  </span>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Open any saved consultation to review its transcript and notes in Scribe.
-                  </p>
+            <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+              <div className="min-h-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Patient Summary
+                    </span>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Persistent summary sourced from <span className="font-medium text-slate-600">patient-summary.md</span>.
+                    </p>
+                  </div>
+                  <FileText className="hidden h-5 w-5 text-cyan-500 md:block" />
                 </div>
-                <History className="hidden h-5 w-5 text-cyan-500 md:block" />
-              </div>
 
-              {sessionsLoading ? (
-                <div className="flex items-center justify-center py-16">
-                  <Loader2 className="w-7 h-7 text-cyan-500 animate-spin" />
-                </div>
-              ) : sessions.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-10 text-center">
-                  <p className="text-sm text-slate-400">
-                    No sessions yet. Record a consultation and generate notes from the Scribe tab.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {sessions.map(session => {
-                    const createdDate = session.createdAt ? new Date(session.createdAt) : null;
-                    const formattedDate = createdDate
-                      ? createdDate.toLocaleDateString(undefined, {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                        })
-                      : 'Unknown date';
-                    const labelTime = createdDate
-                      ? createdDate.toLocaleTimeString(undefined, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : '';
-                    const mainComplaint =
-                      session.mainComplaint?.trim() ||
-                      (session.notes && session.notes.length > 0
-                        ? extractMainComplaint(session.notes[0].content)
-                        : '');
-                    const hasNotes = session.notes && session.notes.length > 0;
-                    return (
-                      <button
-                        key={session.id}
-                        type="button"
-                        onClick={() => handleLoadSession(session)}
-                        className="group flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-all hover:border-cyan-200 hover:bg-cyan-50/50"
-                      >
-                        <div className="flex min-w-0 flex-1 items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-[11px] font-bold text-slate-500 shrink-0">
-                            {formattedDate.slice(0, 2)}
+                {patientSummaryLoading ? (
+                  <div className="flex h-[420px] items-center justify-center">
+                    <Loader2 className="h-7 w-7 animate-spin text-cyan-500" />
+                  </div>
+                ) : (
+                  <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-[#e4edf3] bg-[linear-gradient(180deg,#fbfdff_0%,#f6fafc_100%)]">
+                    <div className="border-b border-slate-200 px-5 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                        Current Snapshot
+                      </p>
+                      <p className="mt-2 text-xs text-slate-400">
+                        {parsedPatientSummary.lastUpdated
+                          ? `Last updated ${parsedPatientSummary.lastUpdated}`
+                          : 'Summary will appear here after the first upload or consultation.'}
+                      </p>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                      <div className="space-y-6">
+                        <div className="space-y-3">
+                          {parsedPatientSummary.snapshot.length > 0 ? (
+                            parsedPatientSummary.snapshot.map((bullet, index) => (
+                              <div
+                                key={`${bullet}-${index}`}
+                                className="flex gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                              >
+                                <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-cyan-500" />
+                                <p className="text-sm leading-6 text-slate-700">{bullet}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-6 text-sm text-slate-400">
+                              No persistent summary available yet.
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="mb-3 flex items-center gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                              Timeline
+                            </span>
                           </div>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-800">
-                              {mainComplaint || 'Consultation'}
-                            </p>
-                            <p className="mt-0.5 text-xs text-slate-400">
-                              {formattedDate}
-                              {labelTime && ` - ${labelTime}`}
-                              {hasNotes
-                                ? ` - ${session.notes!.length} note${session.notes!.length !== 1 ? 's' : ''}`
-                                : ' - transcript only'}
-                            </p>
+                          <div className="space-y-3">
+                            {parsedPatientSummary.timeline.length > 0 ? (
+                              parsedPatientSummary.timeline.map((entry, index) => (
+                                <div
+                                  key={`${entry.heading}-${index}`}
+                                  className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+                                >
+                                  <p className="text-sm font-semibold text-slate-800">{entry.heading}</p>
+                                  <div className="mt-3 space-y-2">
+                                    {entry.bullets.map((bullet, bulletIndex) => (
+                                      <div key={`${bullet}-${bulletIndex}`} className="flex gap-3">
+                                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+                                        <p className="text-sm leading-6 text-slate-600">{bullet}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-6 text-sm text-slate-400">
+                                No recorded updates yet.
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <ChevronRight
-                          size={16}
-                          className="shrink-0 text-slate-300 transition-colors group-hover:text-cyan-500"
-                        />
-                      </button>
-                    );
-                  })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="min-h-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Consultations {sessions.length > 0 && `(${sessions.length})`}
+                    </span>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Open any saved consultation to review its transcript and notes in Scribe.
+                    </p>
+                  </div>
+                  <History className="hidden h-5 w-5 text-cyan-500 md:block" />
                 </div>
-              )}
+
+                {sessionsLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="w-7 h-7 text-cyan-500 animate-spin" />
+                  </div>
+                ) : sessions.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-10 text-center">
+                    <p className="text-sm text-slate-400">
+                      No sessions yet. Record a consultation and generate notes from the Scribe tab.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {sessions.map(session => {
+                      const createdDate = session.createdAt ? new Date(session.createdAt) : null;
+                      const formattedDate = createdDate
+                        ? createdDate.toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                        : 'Unknown date';
+                      const labelTime = createdDate
+                        ? createdDate.toLocaleTimeString(undefined, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '';
+                      const mainComplaint =
+                        session.mainComplaint?.trim() ||
+                        (session.notes && session.notes.length > 0
+                          ? extractMainComplaint(session.notes[0].content)
+                          : '');
+                      const hasNotes = session.notes && session.notes.length > 0;
+                      return (
+                        <button
+                          key={session.id}
+                          type="button"
+                          onClick={() => handleLoadSession(session)}
+                          className="group flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-all hover:border-cyan-200 hover:bg-cyan-50/50"
+                        >
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-[11px] font-bold text-slate-500 shrink-0">
+                              {formattedDate.slice(0, 2)}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-800">
+                                {mainComplaint || 'Consultation'}
+                              </p>
+                              <p className="mt-0.5 text-xs text-slate-400">
+                                {formattedDate}
+                                {labelTime && ` - ${labelTime}`}
+                                {hasNotes
+                                  ? ` - ${session.notes!.length} note${session.notes!.length !== 1 ? 's' : ''}`
+                                  : ' - transcript only'}
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight
+                            size={16}
+                            className="shrink-0 text-slate-300 transition-colors group-hover:text-cyan-500"
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           ) : activeTab === 'notes' ? (
             <>

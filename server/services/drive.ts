@@ -315,6 +315,97 @@ export async function downloadTextFromDrive(token: string, fileId: string): Prom
   return res.text();
 }
 
+export async function findFileInFolder(
+  token: string,
+  parentFolderId: string,
+  fileName: string,
+  mimeType?: string
+): Promise<DriveFileRaw | null> {
+  const clauses = [
+    `'${parentFolderId}' in parents`,
+    `name='${fileName.replace(/'/g, "\\'")}'`,
+    'trashed=false',
+  ];
+  if (mimeType) {
+    clauses.push(`mimeType='${mimeType.replace(/'/g, "\\'")}'`);
+  }
+  const query = encodeURIComponent(clauses.join(' and '));
+  const data = await driveRequest(
+    token,
+    `/files?q=${query}&fields=files(id,name,mimeType,appProperties,createdTime,modifiedTime)`
+  );
+  return data.files && data.files.length > 0 ? data.files[0] : null;
+}
+
+export async function upsertTextFileInFolder(
+  token: string,
+  parentFolderId: string,
+  fileName: string,
+  content: string,
+  mimeType = 'text/plain',
+  appProperties?: Record<string, string>
+): Promise<string> {
+  const existing = await findFileInFolder(token, parentFolderId, fileName);
+
+  if (existing) {
+    const res = await fetch(`${uploadApi}/files/${existing.id}?uploadType=media`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': mimeType,
+      },
+      body: content,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown update error');
+      throw new Error(`[Drive ${res.status}] Failed to update "${fileName}": ${errText}`);
+    }
+
+    if (appProperties) {
+      await driveRequest(token, `/files/${existing.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ appProperties }),
+      });
+    }
+
+    return existing.id;
+  }
+
+  const buffer = Buffer.from(content, 'utf-8');
+  return uploadToDrive(token, fileName, mimeType, parentFolderId, buffer, appProperties);
+}
+
+export async function upsertJsonFileInFolder(
+  token: string,
+  parentFolderId: string,
+  fileName: string,
+  value: unknown,
+  appProperties?: Record<string, string>
+): Promise<string> {
+  return upsertTextFileInFolder(
+    token,
+    parentFolderId,
+    fileName,
+    JSON.stringify(value, null, 2),
+    'application/json',
+    appProperties
+  );
+}
+
+export async function readJsonFileFromDrive<T>(
+  token: string,
+  fileId: string,
+  fallback: T
+): Promise<T> {
+  try {
+    const text = await downloadTextFromDrive(token, fileId);
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Download a file as a binary buffer from Google Drive.
  */
@@ -415,11 +506,25 @@ export async function extractTextFromFile(
 export async function fetchAllFilesInFolder(
   token: string,
   folderId: string
-): Promise<Array<{ id: string; name: string; mimeType: string }>> {
-  const allFiles: Array<{ id: string; name: string; mimeType: string }> = [];
+): Promise<Array<{
+  id: string;
+  name: string;
+  mimeType: string;
+  appProperties?: Record<string, string>;
+  createdTime?: string;
+  modifiedTime?: string;
+}>> {
+  const allFiles: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    appProperties?: Record<string, string>;
+    createdTime?: string;
+    modifiedTime?: string;
+  }> = [];
   const searchQuery = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
   const filesRes = await fetch(
-    `${driveApi}/files?q=${searchQuery}&fields=files(id,name,mimeType)&pageSize=100`,
+    `${driveApi}/files?q=${searchQuery}&fields=files(id,name,mimeType,appProperties,createdTime,modifiedTime)&pageSize=100`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
 
@@ -427,7 +532,16 @@ export async function fetchAllFilesInFolder(
     throw new Error(`[Drive ${filesRes.status}] Failed to list files in folder ${folderId}`);
   }
 
-  const data = (await filesRes.json()) as { files?: Array<{ id: string; name: string; mimeType: string }> };
+  const data = (await filesRes.json()) as {
+    files?: Array<{
+      id: string;
+      name: string;
+      mimeType: string;
+      appProperties?: Record<string, string>;
+      createdTime?: string;
+      modifiedTime?: string;
+    }>;
+  };
   const files = data.files || [];
 
   for (const file of files) {
@@ -515,5 +629,7 @@ export function parsePatientFolder(f: DriveFileRaw) {
     medicalAid: f.appProperties?.medicalAid || undefined,
     medicalAidPlan: f.appProperties?.medicalAidPlan || undefined,
     medicalAidNumber: f.appProperties?.medicalAidNumber || undefined,
+    folderNumber: f.appProperties?.folderNumber || undefined,
+    idNumber: f.appProperties?.idNumber || undefined,
   };
 }

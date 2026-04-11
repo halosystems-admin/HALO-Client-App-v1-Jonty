@@ -85,7 +85,11 @@ router.post('/generate-note', async (req: Request, res: Response) => {
       finalFileName,
       DOCX_MIME,
       patientNotesFolderId,
-      buffer
+      buffer,
+      {
+        internalType: 'halo_note_export',
+        haloGenerated: 'true',
+      }
     );
 
     res.json({ success: true, fileId, name: finalFileName });
@@ -204,7 +208,11 @@ router.post('/confirm-and-send', async (req: Request, res: Response) => {
       finalFileName,
       DOCX_MIME,
       patientNotesFolderId,
-      buffer
+      buffer,
+      {
+        internalType: 'halo_note_export',
+        haloGenerated: 'true',
+      }
     );
 
     let emailSent = false;

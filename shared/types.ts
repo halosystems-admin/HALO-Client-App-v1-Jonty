@@ -10,6 +10,8 @@ export interface Patient {
   medicalAid?: string;
   medicalAidPlan?: string;
   medicalAidNumber?: string;
+  folderNumber?: string;
+  idNumber?: string;
 }
 
 export interface DriveFile {
@@ -72,6 +74,41 @@ export interface UserSettings {
   customTemplateName: string;
   // Halo template (for generate_note)
   templateId?: string;
+  modules?: UserModulesSettings;
+}
+
+export interface UserModulesSettings {
+  admissions: boolean;
+}
+
+export const DEFAULT_USER_MODULES: UserModulesSettings = {
+  admissions: false,
+};
+
+export const DEFAULT_USER_SETTINGS: UserSettings = {
+  firstName: '',
+  lastName: '',
+  profession: '',
+  department: '',
+  city: '',
+  postalCode: '',
+  university: '',
+  noteTemplate: 'soap',
+  customTemplateContent: '',
+  customTemplateName: '',
+  templateId: 'clinical_note',
+  modules: DEFAULT_USER_MODULES,
+};
+
+export function normalizeUserSettings(value: Partial<UserSettings> | null | undefined): UserSettings {
+  return {
+    ...DEFAULT_USER_SETTINGS,
+    ...(value || {}),
+    modules: {
+      ...DEFAULT_USER_MODULES,
+      ...(value?.modules || {}),
+    },
+  };
 }
 
 export interface NoteField {
@@ -160,4 +197,75 @@ export interface ScribeSession {
   notes?: ScribeSessionNote[];
   /** Short main complaint/summary for list display (e.g. "Ankle Fracture"). */
   mainComplaint?: string;
+}
+
+export interface PatientSummaryTimelineEntry {
+  id: string;
+  sourceId: string;
+  sourceType: 'file' | 'consultation';
+  title: string;
+  dateLabel: string;
+  happenedAt: string;
+  bullets: string[];
+  sourceName?: string;
+}
+
+export interface PatientSummaryProcessedSource {
+  sourceId: string;
+  sourceType: 'file' | 'consultation';
+  sourceName: string;
+  sourceUpdatedAt: string;
+  processedAt: string;
+}
+
+export interface PatientSummaryState {
+  version: number;
+  patientId: string;
+  patientName: string;
+  lastUpdatedAt: string | null;
+  dirty: boolean;
+  snapshot: string[];
+  timeline: PatientSummaryTimelineEntry[];
+  processedSources: Record<string, PatientSummaryProcessedSource>;
+}
+
+export interface AdmissionsTask {
+  id: string;
+  title: string;
+  done: boolean;
+  createdAt: string;
+}
+
+export interface AdmissionsCardMovement {
+  columnId: string;
+  columnTitle: string;
+  enteredAt: string;
+  exitedAt?: string;
+}
+
+export interface AdmissionsCard {
+  id: string;
+  patientId: string;
+  patientName: string;
+  folderNumber?: string;
+  diagnosis: string;
+  coManagingDoctors: string[];
+  tags: string[];
+  tasks: AdmissionsTask[];
+  enteredColumnAt: string;
+  createdAt: string;
+  updatedAt: string;
+  movementHistory: AdmissionsCardMovement[];
+}
+
+export interface AdmissionsColumn {
+  id: string;
+  title: string;
+  cards: AdmissionsCard[];
+}
+
+export interface AdmissionsBoard {
+  version: number;
+  updatedAt: string;
+  columns: AdmissionsColumn[];
 }

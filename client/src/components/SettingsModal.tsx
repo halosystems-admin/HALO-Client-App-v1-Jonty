@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { DEFAULT_USER_SETTINGS, normalizeUserSettings } from '../../../shared/types';
 import type { UserSettings } from '../../../shared/types';
 import {
   X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
-  FileText, Upload, Check, AlertCircle, Send, Plus,
+  FileText, Upload, Check, AlertCircle, Send, Plus, LayoutPanelTop,
 } from 'lucide-react';
 import { requestNewTemplate } from '../services/api';
 
@@ -12,19 +13,7 @@ const HALO_TEMPLATE_OPTIONS = [
   { id: 'jon_note', name: 'Open Note' },
 ];
 
-const DEFAULT_SETTINGS: UserSettings = {
-  firstName: '',
-  lastName: '',
-  profession: '',
-  department: '',
-  city: '',
-  postalCode: '',
-  university: '',
-  noteTemplate: 'soap',
-  customTemplateContent: '',
-  customTemplateName: '',
-  templateId: 'clinical_note',
-};
+const DEFAULT_SETTINGS: UserSettings = DEFAULT_USER_SETTINGS;
 
 interface Props {
   isOpen: boolean;
@@ -40,10 +29,10 @@ export const SettingsModal: React.FC<Props> = ({
   isOpen, onClose, settings, onSave, userEmail, loginTime, onToast,
 }) => {
   const [editMode, setEditMode] = useState(false);
-  const [form, setForm] = useState<UserSettings>(settings || DEFAULT_SETTINGS);
+  const [form, setForm] = useState<UserSettings>(normalizeUserSettings(settings || DEFAULT_SETTINGS));
   const [saving, setSaving] = useState(false);
   const [elapsed, setElapsed] = useState('');
-  const [templateTab, setTemplateTab] = useState<'soap' | 'custom'>(settings?.noteTemplate || 'soap');
+  const [templateTab, setTemplateTab] = useState<'soap' | 'custom'>(normalizeUserSettings(settings || DEFAULT_SETTINGS).noteTemplate || 'soap');
   const [uploadError, setUploadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,10 +44,8 @@ export const SettingsModal: React.FC<Props> = ({
   const requestFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (settings) {
-      setForm(settings);
-      setTemplateTab(settings.noteTemplate);
-    }
+    setForm(normalizeUserSettings(settings || DEFAULT_SETTINGS));
+    setTemplateTab(normalizeUserSettings(settings || DEFAULT_SETTINGS).noteTemplate);
   }, [settings]);
 
   // Session timer
@@ -82,7 +69,11 @@ export const SettingsModal: React.FC<Props> = ({
     if (editMode && requiredFieldsMissing) return;
     setSaving(true);
     try {
-      const updated = { ...form, noteTemplate: templateTab, templateId: form.templateId || 'clinical_note' };
+      const updated = normalizeUserSettings({
+        ...form,
+        noteTemplate: templateTab,
+        templateId: form.templateId || 'clinical_note',
+      });
       await onSave(updated);
       setForm(updated);
       setEditMode(false);
@@ -436,16 +427,61 @@ export const SettingsModal: React.FC<Props> = ({
             )}
           </div>
 
+          <div className="border-t border-slate-100 pt-6">
+            <h3 className="mb-3 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
+              <LayoutPanelTop size={12} /> Modules
+            </h3>
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Admissions</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Show the Trello-style inpatient management board in the sidebar.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      modules: {
+                        ...(prev.modules || { admissions: false }),
+                        admissions: !(prev.modules?.admissions ?? false),
+                      },
+                    }))
+                  }
+                  className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition ${
+                    form.modules?.admissions
+                      ? 'border-cyan-500 bg-cyan-500'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                  aria-pressed={form.modules?.admissions ?? false}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition ${
+                      form.modules?.admissions ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         {/* Footer with Save */}
-        {editMode || templateTab !== (settings?.noteTemplate || 'soap') || form.customTemplateContent !== (settings?.customTemplateContent || '') || form.templateId !== (settings?.templateId || 'clinical_note') ? (
+        {editMode ||
+        templateTab !== normalizeUserSettings(settings || DEFAULT_SETTINGS).noteTemplate ||
+        form.customTemplateContent !== normalizeUserSettings(settings || DEFAULT_SETTINGS).customTemplateContent ||
+        form.templateId !== normalizeUserSettings(settings || DEFAULT_SETTINGS).templateId ||
+        (form.modules?.admissions ?? false) !== (normalizeUserSettings(settings || DEFAULT_SETTINGS).modules?.admissions ?? false) ? (
           <div className="border-t border-slate-100 p-4 bg-slate-50 flex gap-3">
             <button
               onClick={() => {
                 setEditMode(false);
-                setForm(settings || DEFAULT_SETTINGS);
-                setTemplateTab(settings?.noteTemplate || 'soap');
+                const normalized = normalizeUserSettings(settings || DEFAULT_SETTINGS);
+                setForm(normalized);
+                setTemplateTab(normalized.noteTemplate || 'soap');
               }}
               className="flex-1 px-4 py-2.5 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition text-sm"
             >

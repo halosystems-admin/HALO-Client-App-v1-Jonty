@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { PatientWorkspace } from './pages/PatientWorkspace';
+import { PatientWorkspace, type WorkspaceNavigationIntent } from './pages/PatientWorkspace';
 import { Toast } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
 import { UploadHud } from './components/UploadHud';
@@ -10,6 +10,7 @@ import type { StickerExtractedData } from './services/api';
 import type { UploadHudState } from './components/UploadHud';
 import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, ScanLine, Loader2 } from 'lucide-react';
 import { CalendarPage } from './pages/CalendarPage';
+import { AdmissionsPage } from './pages/AdmissionsPage';
 
 export const App = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -61,12 +62,13 @@ export const App = () => {
 
   // Calendar / bookings
   const [calendarPrepEvent, setCalendarPrepEvent] = useState<CalendarEvent | null>(null);
-  const [activeMainView, setActiveMainView] = useState<'workspace' | 'calendar'>('workspace');
+  const [activeMainView, setActiveMainView] = useState<'workspace' | 'calendar' | 'admissions'>('workspace');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('halo_sidebarCollapsed') === '1';
   });
   const [uploadHudState, setUploadHudState] = useState<UploadHudState | null>(null);
+  const [workspaceIntent, setWorkspaceIntent] = useState<WorkspaceNavigationIntent | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -83,6 +85,12 @@ export const App = () => {
 
     return () => window.clearTimeout(timeoutId);
   }, [uploadHudState]);
+
+  useEffect(() => {
+    if (userSettings?.modules?.admissions === false && activeMainView === 'admissions') {
+      setActiveMainView('workspace');
+    }
+  }, [activeMainView, userSettings?.modules?.admissions]);
 
   // Persist selected patient to sessionStorage so it survives page refresh
   // Also track recently opened patients in localStorage
@@ -104,6 +112,23 @@ export const App = () => {
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
   }, []);
+
+  const openPatientWorkspace = useCallback((
+    patientId: string,
+    options?: { tab?: WorkspaceNavigationIntent['tab']; freshSession?: boolean }
+  ) => {
+    setActiveMainView('workspace');
+    selectPatient(patientId);
+    if (options?.tab || options?.freshSession) {
+      setWorkspaceIntent({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        tab: options?.tab || 'overview',
+        freshSession: options?.freshSession,
+      });
+    } else {
+      setWorkspaceIntent(null);
+    }
+  }, [selectPatient]);
 
   const getErrorMessage = (err: unknown): string => {
     if (err instanceof ApiError) return err.message;
@@ -252,6 +277,8 @@ export const App = () => {
         medicalAid: newPatientMedicalAid,
         medicalAidNumber: newPatientMedicalAidNumber,
         medicalAidPlan: newPatientMedicalAidPlan,
+        folderNumber: newPatientFolderNumber,
+        idNumber: newPatientIdNumber,
       });
       if (newP) {
         await refreshPatients();
@@ -331,10 +358,12 @@ export const App = () => {
   }
 
   const activePatient = patients.find(p => p.id === selectedPatientId);
+  const admissionsEnabled = userSettings?.modules?.admissions ?? false;
+  const hideSidebarOnMobile = activeMainView === 'workspace' && Boolean(selectedPatientId);
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden relative">
-      <div className={`${selectedPatientId ? 'hidden md:flex' : 'flex'} h-full shrink-0 z-20`}>
+      <div className={`${hideSidebarOnMobile ? 'hidden md:flex' : 'flex'} h-full shrink-0 z-20`}>
         <Sidebar
           patients={patients}
           selectedPatientId={selectedPatientId}
@@ -351,21 +380,29 @@ export const App = () => {
           activeMainView={activeMainView}
           onOpenPatients={() => setActiveMainView('workspace')}
           onOpenCalendar={() => setActiveMainView('calendar')}
+          admissionsEnabled={admissionsEnabled}
+          onOpenAdmissions={() => setActiveMainView('admissions')}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         />
       </div>
 
-      <div className={`flex-1 flex flex-col h-screen relative ${!selectedPatientId ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`flex-1 flex flex-col h-screen relative ${activeMainView === 'workspace' && !selectedPatientId ? 'hidden md:flex' : 'flex'}`}>
         {activeMainView === 'calendar' ? (
           <CalendarPage
             patients={patients}
             onSelectPatientFromEvent={(event) => {
               if (!event.patientId) return;
-              selectPatient(event.patientId);
+              openPatientWorkspace(event.patientId);
               setCalendarPrepEvent(event);
               setActiveMainView('workspace');
             }}
+          />
+        ) : activeMainView === 'admissions' && admissionsEnabled ? (
+          <AdmissionsPage
+            patients={patients}
+            onToast={showToast}
+            onOpenPatient={(patientId, options) => openPatientWorkspace(patientId, options)}
           />
         ) : activePatient ? (
           <PatientWorkspace
@@ -376,6 +413,10 @@ export const App = () => {
             onToast={showToast}
             templateId={userSettings?.templateId || 'clinical_note'}
             onUploadHudChange={setUploadHudState}
+            navigationIntent={workspaceIntent}
+            onNavigationIntentHandled={(intentId) =>
+              setWorkspaceIntent((current) => (current?.id === intentId ? null : current))
+            }
             calendarPrepEvent={
               calendarPrepEvent && calendarPrepEvent.patientId === activePatient.id
                 ? calendarPrepEvent

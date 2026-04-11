@@ -1,4 +1,6 @@
+import { normalizeUserSettings } from '../../../shared/types';
 import type {
+  AdmissionsBoard,
   Patient,
   DriveFile,
   LabAlert,
@@ -251,6 +253,8 @@ export interface PatientBillingPayload {
   medicalAid?: string;
   medicalAidPlan?: string;
   medicalAidNumber?: string;
+  folderNumber?: string;
+  idNumber?: string;
 }
 
 export interface PatientCreatePayload extends PatientBillingPayload {
@@ -404,14 +408,20 @@ export const fetchFolderContents = async (folderId: string): Promise<DriveFile[]
   return all;
 };
 
-export const uploadFile = async (patientId: string, file: File, customName?: string): Promise<DriveFile> => {
+export const uploadFile = async (
+  folderId: string,
+  file: File,
+  customName?: string,
+  patientId?: string
+): Promise<DriveFile> => {
   const base64 = await fileToBase64(file);
-  return request<DriveFile>(`/api/drive/patients/${patientId}/upload`, {
+  return request<DriveFile>(`/api/drive/patients/${folderId}/upload`, {
     method: 'POST',
     body: JSON.stringify({
       fileName: customName || file.name,
       fileType: file.type,
       fileData: base64,
+      patientId,
     }),
   });
 };
@@ -508,6 +518,20 @@ export const describeFile = async (patientId: string, file: DriveFile): Promise<
   });
   return data.description ?? '';
 };
+
+export const fetchPatientSummary = (patientId: string) =>
+  request<{ markdown: string; lastUpdatedAt?: string | null }>(
+    `/api/drive/patients/${encodeURIComponent(patientId)}/summary`
+  );
+
+export const fetchAdmissionsBoard = () =>
+  request<{ board: AdmissionsBoard }>('/api/drive/admissions-board');
+
+export const saveAdmissionsBoard = (board: AdmissionsBoard) =>
+  request<{ board: AdmissionsBoard }>('/api/drive/admissions-board', {
+    method: 'PUT',
+    body: JSON.stringify(board),
+  });
 
 // --- Halo API (note generation + templates) ---
 export const getHaloTemplates = (userId?: string) =>
@@ -660,7 +684,9 @@ export const askHaloStream = async (
 
 // --- SETTINGS ---
 export const loadSettings = () =>
-  request<{ settings: UserSettings | null }>('/api/drive/settings');
+  request<{ settings: UserSettings | null }>('/api/drive/settings').then((response) => ({
+    settings: normalizeUserSettings(response.settings),
+  }));
 
 export const saveSettings = (settings: UserSettings) =>
   request<{ success: boolean }>('/api/drive/settings', {
