@@ -17,6 +17,7 @@ import {
   askHaloStream,
   askHalo,
   generateNotePreview,
+  previewNotePdf,
   saveNoteAsDocx,
   emailNoteAsDocx,
   generatePrepNote,
@@ -61,16 +62,31 @@ function extractMainComplaint(content: string): string {
   return '';
 }
 
+function fieldsToNoteContent(fields: NoteField[]): string {
+  return fields
+    .map((f) => (f.label ? `${f.label}:\n${f.body ?? ''}` : f.body))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 /** Effective note text for save/email: content or decoded from fields. */
 function getNoteText(note: HaloNote): string {
-  if (note.content?.trim()) return note.content;
   if (note.fields?.length) {
-    return (note.fields as NoteField[])
-      .map((f) => (f.label ? `${f.label}:\n${f.body ?? ''}` : f.body))
-      .filter(Boolean)
-      .join('\n\n');
+    return fieldsToNoteContent(note.fields as NoteField[]);
   }
+  if (note.content?.trim()) return note.content;
   return '';
+}
+
+function serializeSessionNotes(notes: HaloNote[]) {
+  return notes.map((note) => ({
+    noteId: note.noteId,
+    title: note.title,
+    content: getNoteText(note),
+    template_id: note.template_id,
+    ...(note.fields && note.fields.length > 0 ? { fields: note.fields } : {}),
+    ...(note.rawData !== undefined ? { rawData: note.rawData } : {}),
+  }));
 }
 
 /** Fallback when Halo get_templates fails or returns empty; use real IDs from Halo when possible to avoid 404. */
@@ -127,7 +143,6 @@ interface Props {
 export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, templateId: propTemplateId, calendarPrepEvent }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [notes, setNotes] = useState<HaloNote[]>([]);
-  const [activeNoteIndex, setActiveNoteIndex] = useState(0);
   const [templateId, setTemplateId] = useState(propTemplateId || 'clinical_note');
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
   /** Full transcript for the current session (all completed segments). */
@@ -535,12 +550,23 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   }, [propTemplateId]);
 
   const handleNoteChange = useCallback((noteIndex: number, updates: { title?: string; content?: string; fields?: NoteField[] }) => {
-    setNotes(prev => prev.map((n, i) => i !== noteIndex ? n : {
-      ...n,
-      ...(updates.title !== undefined && { title: updates.title }),
-      ...(updates.content !== undefined && { content: updates.content }),
-      ...(updates.fields !== undefined && { fields: updates.fields }),
-      dirty: true,
+    setNotes(prev => prev.map((n, i) => {
+      if (i !== noteIndex) return n;
+
+      const nextFields = updates.fields !== undefined ? updates.fields : n.fields;
+      const nextContent = updates.fields !== undefined
+        ? fieldsToNoteContent(updates.fields)
+        : updates.content !== undefined
+          ? updates.content
+          : n.content;
+
+      return {
+        ...n,
+        ...(updates.title !== undefined && { title: updates.title }),
+        ...(updates.fields !== undefined && { fields: nextFields }),
+        content: nextContent,
+        dirty: true,
+      };
     }));
   }, []);
 
@@ -558,6 +584,24 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     },
     [patient.name, templateOptions]
   );
+
+  const handleLoadPreviewPdf = useCallback(async (noteIndex: number) => {
+    const note = notes[noteIndex];
+    const text = note ? getNoteText(note) : '';
+    if (!text.trim()) {
+      throw new Error('There is no note content to preview yet.');
+    }
+
+    const tplId = note.template_id || templateId;
+    const fileName = buildNoteFileName(tplId, note.title || 'Note');
+    return previewNotePdf({
+      patientId: patient.id,
+      template_id: tplId,
+      text,
+      fileName,
+      user_id: getHaloUserForTemplate(tplId),
+    });
+  }, [notes, patient.id, templateId, buildNoteFileName]);
 
   const handleSaveAsDocx = useCallback(async (noteIndex: number) => {
     const note = notes[noteIndex];
@@ -689,10 +733,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
           const first = res.notes?.[0];
           const fromFields =
             first?.fields && first.fields.length > 0
-              ? first.fields
-                  .map((f) => (f.label ? `${f.label}:\n${f.body ?? ''}` : f.body))
-                  .filter(Boolean)
-                  .join('\n\n')
+              ? fieldsToNoteContent(first.fields)
               : '';
           const content =
             first?.content?.trim() || fromFields || trimmedTranscript;
@@ -704,16 +745,15 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             lastSavedAt: new Date().toISOString(),
             dirty: false,
             ...(first?.fields && first.fields.length > 0 ? { fields: first.fields } : {}),
+            ...(first?.rawData !== undefined ? { rawData: first.rawData } : {}),
           };
         });
         if (isAddNote) {
           setNotes(prev => [...prev, ...combined]);
-          setActiveNoteIndex(notes.length);
           setConsultSubTab(notes.length);
         } else {
           setLastTranscript(trimmedTranscript);
           setNotes(combined);
-          setActiveNoteIndex(0);
           setConsultSubTab(0);
         }
 
@@ -727,12 +767,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             context: consultContext || undefined,
             templates: templateIds,
             noteTitles: combined.map((n) => n.title).filter(Boolean),
-            notes: combined.map((n) => ({
-              noteId: n.noteId,
-              title: n.title,
-              content: n.content,
-              template_id: n.template_id,
-            })),
+            notes: serializeSessionNotes(combined),
             ...(mainComplaint ? { mainComplaint } : {}),
           };
           const res = await savePatientSession(patient.id, payload);
@@ -935,7 +970,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
           dirty: true,
         };
         setNotes([newNote]);
-        setActiveNoteIndex(0);
         setUploadMessage(null);
       } catch (err) {
         if (!cancelled) onToast(getErrorMessage(err), 'error');
@@ -1087,9 +1121,10 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
           template_id: n.template_id,
           lastSavedAt: new Date().toISOString(),
           dirty: false,
+          ...(n.fields && n.fields.length > 0 ? { fields: n.fields } : {}),
+          ...(n.rawData !== undefined ? { rawData: n.rawData } : {}),
         }));
         setNotes(restoredNotes);
-        setActiveNoteIndex(0);
         setConsultSubTab(0);
       } else {
         setNotes([]);
@@ -1229,10 +1264,20 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
         className={`flex-1 ${
           activeTab === 'chat'
             ? 'overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5fbfe_100%)] px-0 py-0'
+            : activeTab === 'notes'
+              ? 'overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-6 md:py-5'
             : 'overflow-y-auto bg-slate-50/50 px-4 py-4 md:px-6 md:py-5'
         }`}
       >
-        <div className={activeTab === 'chat' ? 'h-full' : 'mx-auto max-w-6xl'}>
+        <div
+          className={
+            activeTab === 'chat'
+              ? 'h-full'
+              : activeTab === 'notes'
+                ? 'mx-auto h-full max-w-6xl'
+                : 'mx-auto max-w-6xl'
+          }
+        >
 
           {activeTab === 'overview' ? (
             <FileBrowser
@@ -1330,207 +1375,239 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             </div>
           ) : activeTab === 'notes' ? (
             <>
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Consultation Workspace
-                </span>
-                <span className="text-[11px] text-slate-400">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-cyan-500" />
                   {activeSessionId
-                    ? 'Viewing history. Recording starts a fresh session.'
-                    : 'Current session'}
-                </span>
+                    ? 'Viewing a saved session. Recording starts a fresh one.'
+                    : 'Current consultation'}
+                </div>
+                {(currentTranscript || consultContext || notes.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={prepareFreshRecordingSession}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                  >
+                    Start fresh
+                  </button>
+                )}
               </div>
 
-              {/* Current session: transcript when modal is open, or main content when not */}
-              <div className="h-[600px] flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
+              <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-[#dbe9f1] bg-white shadow-[0_22px_55px_-36px_rgba(15,23,42,0.32)]">
                 {pendingTranscript ? (
-                  /* Transcript visible in background while template modal is open */
-                  <div className="flex-1 flex flex-col p-4 overflow-auto bg-slate-50">
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Transcript preview</p>
-                    <p className="text-sm text-slate-600 whitespace-pre-wrap">{pendingTranscript}</p>
+                  <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                    <div className="border-b border-slate-200 bg-white px-4 py-3 md:px-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            Dictation ready for templates
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Review the transcript while you choose which note types to generate.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleCopyTranscript}
+                          disabled={!pendingTranscript.trim()}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {didCopyTranscript ? 'Copied' : 'Copy transcript'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-5">
+                      <div className="mx-auto max-w-4xl whitespace-pre-wrap rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm leading-7 text-slate-700 shadow-sm">
+                        {pendingTranscript}
+                      </div>
+                    </div>
                   </div>
                 ) : notes.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center text-slate-400 p-6">
+                  <div className="flex h-full min-h-0 items-center justify-center px-6 py-10 text-slate-400">
                     {isGeneratingNotes ? (
-                      <div className="flex flex-col items-center gap-6 w-full max-w-xs text-center">
-                        <div className="relative w-16 h-16">
+                      <div className="flex w-full max-w-xs flex-col items-center gap-6 text-center">
+                        <div className="relative h-16 w-16">
                           <div className="absolute inset-0 rounded-full border-4 border-sky-100" />
                           <div className="absolute inset-0 rounded-full border-4 border-sky-500 border-t-transparent animate-spin" />
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <Loader2 className="w-5 h-5 text-sky-600 animate-spin" />
+                            <Loader2 className="h-5 w-5 animate-spin text-sky-600" />
                           </div>
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-slate-700 mb-1">
+                          <p className="mb-1 text-sm font-semibold text-slate-700">
                             {NOTE_GENERATION_STEPS[noteGenerationStep]}…
                           </p>
                           <p className="text-xs text-slate-400">
                             Generating {selectedTemplatesForGenerate.length} note(s). This usually takes 15–30s.
                           </p>
                         </div>
-                        <div className="flex gap-1.5 justify-center">
+                        <div className="flex justify-center gap-1.5">
                           {NOTE_GENERATION_STEPS.map((_, i) => (
                             <div
                               key={i}
                               className={`h-1.5 rounded-full transition-all duration-500 ${
-                                i <= noteGenerationStep ? 'bg-sky-500 w-6' : 'bg-slate-200 w-3'
+                                i <= noteGenerationStep ? 'w-6 bg-sky-500' : 'w-3 bg-slate-200'
                               }`}
                             />
                           ))}
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center gap-3 text-center">
+                      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
                         <p className="text-sm text-slate-500">No notes yet.</p>
-                        <p className="text-xs text-slate-400">Use the <strong>Record consultation</strong> button above to dictate, then generate notes from your transcript.</p>
+                        <p className="text-xs leading-6 text-slate-400">
+                          Record a consultation to capture the transcript, then choose templates to generate structured notes and PDF previews.
+                        </p>
                       </div>
                     )}
                   </div>
                 ) : (
                   <>
-                    {/* Consult tab bar: Context | Transcript | note tabs | + */}
-                    <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50/80">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-1">
-                        Consultation
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConsultSubTab('context');
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                          consultSubTab === 'context'
-                            ? 'bg-slate-900 text-slate-50 border-slate-900 shadow-sm'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
-                        }`}
-                      >
-                        <Layers className="w-3.5 h-3.5" /> Context
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConsultSubTab('transcript');
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                          consultSubTab === 'transcript'
-                            ? 'bg-slate-900 text-slate-50 border-slate-900 shadow-sm'
-                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
-                        }`}
-                      >
-                        <FileText className="w-3.5 h-3.5" /> Transcript
-                      </button>
-                      <div className="w-px h-6 bg-slate-200 mx-1" />
-                      {notes.map((note, i) => (
-                        <button
-                          key={note.noteId}
-                          type="button"
-                          onClick={() => {
-                            setConsultSubTab(i);
-                            setActiveNoteIndex(i);
-                          }}
-                          className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                            consultSubTab === i
-                              ? 'bg-sky-50 border-sky-300 text-sky-800 shadow-sm'
-                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-slate-300'
-                          }`}
-                        >
-                          <FileText className="w-3.5 h-3.5" /> {note.title || `Note ${i + 1}`}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddNoteModal(true);
-                          setSelectedTemplatesForGenerate(['clinical_note']);
-                        }}
-                        className="flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:border-sky-300 hover:text-sky-700 transition-all"
-                        title="Add note or draft new letter"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {/* Tab content */}
-                    {consultSubTab === 'transcript' ? (
-                      <div className="flex-1 overflow-auto bg-slate-50/60 p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex flex-col">
-                            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                              Transcript
-                            </p>
-                            {isLiveStreaming && (
-                              <p className="text-[11px] text-sky-600 font-medium mt-0.5">
-                                Live transcription in progress…
-                              </p>
-                            )}
-                          </div>
+                    <div className="border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:px-5">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            onClick={handleCopyTranscript}
-                            disabled={!currentTranscript.trim()}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-[11px] font-medium text-slate-600 hover:bg-slate-100 hover:border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                            onClick={() => setConsultSubTab('context')}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              consultSubTab === 'context'
+                                ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                            }`}
                           >
-                            {didCopyTranscript ? 'Copied' : 'Copy'}
+                            <Layers className="h-3.5 w-3.5" />
+                            Context
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConsultSubTab('transcript')}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                              consultSubTab === 'transcript'
+                                ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            Transcript
+                          </button>
+                          <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+                          {notes.map((note, i) => (
+                            <button
+                              key={note.noteId}
+                              type="button"
+                              onClick={() => {
+                                setConsultSubTab(i);
+                              }}
+                              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                consultSubTab === i
+                                  ? 'border-sky-200 bg-sky-50 text-sky-700 shadow-sm'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                              {note.title || `Note ${i + 1}`}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAddNoteModal(true);
+                              setSelectedTemplatesForGenerate(['clinical_note']);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                            title="Add note or letter"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Add note
                           </button>
                         </div>
-                        <div className="h-full min-h-[260px] rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 whitespace-pre-wrap overflow-y-auto">
-                          {currentTranscript || 'No transcript yet. Start a live consultation to see text appear here.'}
+
+                        <span className="text-xs text-slate-400">
+                          {isLiveStreaming ? 'Live transcription in progress…' : 'Structured notes stay editable here.'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {consultSubTab === 'transcript' ? (
+                      <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-5">
+                        <div className="mx-auto flex max-w-4xl flex-col gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-800">
+                              Consultation transcript
+                            </p>
+                            <button
+                              type="button"
+                              onClick={handleCopyTranscript}
+                              disabled={!currentTranscript.trim()}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {didCopyTranscript ? 'Copied' : 'Copy'}
+                            </button>
+                          </div>
+                          <div className="min-h-[420px] whitespace-pre-wrap rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm leading-7 text-slate-700 shadow-sm">
+                            {currentTranscript || 'No transcript yet. Start a live consultation to see text appear here.'}
+                          </div>
                         </div>
                       </div>
                     ) : consultSubTab === 'context' ? (
-                      <div className="flex-1 overflow-auto bg-slate-50/60 p-4">
-                        <div className="flex flex-col gap-2 mb-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex flex-col">
-                              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                Context
+                      <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-5">
+                        <div className="mx-auto flex max-w-4xl flex-col gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-800">
+                                Consultation context
                               </p>
-                              <p className="text-[11px] text-slate-500">
-                                Add any additional context about the patient or paste key details here. This panel mirrors the
-                                free-form context area from your favourite scribe.
+                              <p className="mt-1 text-xs text-slate-500">
+                                Add any extra details you want HALO to keep in mind when generating or refining notes.
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <button
                                 type="button"
                                 onClick={handleContextUploadClick}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-[11px] font-medium text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
                               >
-                                <CloudUpload className="w-3.5 h-3.5" /> Upload from computer
+                                <CloudUpload className="h-3.5 w-3.5" />
+                                Upload from computer
                               </button>
                               <button
                                 type="button"
                                 onClick={openContextDrivePicker}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-[11px] font-medium text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
                               >
-                                <FolderOpen className="w-3.5 h-3.5" /> Add from Drive
+                                <FolderOpen className="h-3.5 w-3.5" />
+                                Add from Drive
                               </button>
                             </div>
                           </div>
+                          <textarea
+                            value={consultContext}
+                            onChange={e => setConsultContext(e.target.value)}
+                            rows={8}
+                            placeholder="e.g. Presenting complaint, differential diagnoses, or details you want reflected in the final note."
+                            className="min-h-[420px] w-full resize-none rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm leading-7 text-slate-800 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                          />
                         </div>
-                        <textarea
-                          value={consultContext}
-                          onChange={e => setConsultContext(e.target.value)}
-                          rows={8}
-                          placeholder="e.g. Presenting complaint, key differentials you’re considering, or anything you’d like HALO to keep in mind."
-                          className="w-full h-full min-h-[260px] resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none"
-                        />
                       </div>
                     ) : typeof consultSubTab === 'number' ? (
-                      <NoteEditor
-                        notes={notes}
-                        activeIndex={consultSubTab}
-                        onActiveIndexChange={(i) => { setConsultSubTab(i); setActiveNoteIndex(i); }}
-                        onNoteChange={handleNoteChange}
-                        status={status}
-                        templateId={templateId}
-                        templateOptions={templateOptions}
-                        onTemplateChange={setTemplateId}
-                        onSaveAsDocx={handleSaveAsDocx}
-                        onSaveAll={handleSaveAll}
-                        onEmail={handleEmail}
-                        savingNoteIndex={savingNoteIndex}
-                        showNoteTabs={false}
-                      />
+                      <div className="min-h-0 flex-1">
+                        <NoteEditor
+                          notes={notes}
+                          activeIndex={consultSubTab}
+                          onActiveIndexChange={(i) => { setConsultSubTab(i); }}
+                          onNoteChange={handleNoteChange}
+                          status={status}
+                          templateId={templateId}
+                          templateOptions={templateOptions}
+                          onTemplateChange={setTemplateId}
+                          onSaveAsDocx={handleSaveAsDocx}
+                          onSaveAll={handleSaveAll}
+                          onEmail={handleEmail}
+                          onLoadPreviewPdf={handleLoadPreviewPdf}
+                          savingNoteIndex={savingNoteIndex}
+                          showNoteTabs={false}
+                        />
+                      </div>
                     ) : null}
                   </>
                 )}
@@ -2128,7 +2205,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                       };
                       setNotes((prev) => [...prev, newNote]);
                       const newIndex = notes.length;
-                      setActiveNoteIndex(newIndex);
                       setConsultSubTab(newIndex);
                       setShowCustomAiNoteModal(false);
                       setCustomAiPrompt('');

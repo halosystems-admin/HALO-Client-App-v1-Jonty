@@ -51,6 +51,39 @@ const VIEW_OPTIONS: Array<{ id: CalendarViewMode; label: string }> = [
 const getBrowserTimeZone = () =>
   Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
+function padDatePart(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function formatLocalDateTimeInput(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return [
+    `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`,
+    `${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}`,
+  ].join('T');
+}
+
+function parseLocalDateTimeInput(value: string): string {
+  if (!value) return '';
+
+  const [datePart, timePart = '00:00'] = value.split('T');
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hours, minutes] = timePart.split(':').map(Number);
+  const localDate = new Date(
+    year,
+    (month || 1) - 1,
+    day || 1,
+    hours || 0,
+    minutes || 0,
+    0,
+    0
+  );
+
+  return localDate.toISOString();
+}
+
 const findPatientName = (patients: Patient[], id?: string) =>
   id ? patients.find((p) => p.id === id)?.name ?? '' : '';
 
@@ -710,11 +743,11 @@ export const CalendarPage: React.FC<Props> = ({
                   </label>
                   <input
                     type="datetime-local"
-                    value={editorState.start.slice(0, 16)}
+                    value={formatLocalDateTimeInput(editorState.start)}
                     onChange={(e) =>
                       setEditorState((prev) =>
                         prev
-                          ? { ...prev, start: new Date(e.target.value).toISOString() }
+                          ? { ...prev, start: parseLocalDateTimeInput(e.target.value) }
                           : prev
                       )
                     }
@@ -727,11 +760,11 @@ export const CalendarPage: React.FC<Props> = ({
                   </label>
                   <input
                     type="datetime-local"
-                    value={editorState.end.slice(0, 16)}
+                    value={formatLocalDateTimeInput(editorState.end)}
                     onChange={(e) =>
                       setEditorState((prev) =>
                         prev
-                          ? { ...prev, end: new Date(e.target.value).toISOString() }
+                          ? { ...prev, end: parseLocalDateTimeInput(e.target.value) }
                           : prev
                       )
                     }
