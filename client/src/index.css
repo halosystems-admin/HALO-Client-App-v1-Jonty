@@ -6,6 +6,8 @@ body {
     'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: #f4f9fc;
+  color: #0f172a;
 }
 
 /* Custom scrollbar — subtle and clean */
@@ -21,4 +23,109 @@ body {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #cbd5e1;
+}
+
+.halo-calendar .fc {
+  height: 100%;
+  --fc-border-color: #e3edf4;
+  --fc-neutral-bg-color: #f8fbfd;
+  --fc-page-bg-color: #ffffff;
+  --fc-list-event-hover-bg-color: #f2f8fc;
+  --fc-now-indicator-color: #ef4444;
+}
+
+.halo-calendar .fc-scrollgrid {
+  border: none;
+}
+
+.halo-calendar .fc-theme-standard td,
+.halo-calendar .fc-theme-standard th {
+  border-color: #e6eff5;
+}
+
+.halo-calendar .fc-col-header-cell {
+  background: #fbfdff;
+  padding: 10px 0;
+}
+
+.halo-calendar .fc-col-header-cell-cushion {
+  padding: 8px 10px;
+  color: #1e293b;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.halo-calendar .fc-timegrid-slot-label-cushion,
+.halo-calendar .fc-timegrid-axis-cushion {
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0 10px;
+}
+
+.halo-calendar .fc-timegrid-axis {
+  background: #fbfdff;
+}
+
+.halo-calendar .fc-timegrid-slot {
+  height: 3.7rem;
+}
+
+.halo-calendar .fc-timegrid-now-indicator-line {
+  border-color: #f97316;
+}
+
+.halo-calendar .fc-timegrid-now-indicator-arrow {
+  border-top-color: #f97316;
+  border-bottom-color: #f97316;
+}
+
+.halo-calendar .fc-day-today {
+  background: #fffdf2 !important;
+}
+
+.halo-calendar .fc-daygrid-day-number,
+.halo-calendar .fc-timegrid-slot-label {
+  color: #475569;
+}
+
+.halo-calendar .fc-event {
+  border: none;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px -18px rgba(37, 99, 235, 0.65);
+  padding: 1px;
+}
+
+.halo-calendar .fc-event-main {
+  background: linear-gradient(180deg, #f8fdff 0%, #edf7fc 100%);
+  border: 1px solid #b6dff0;
+  border-radius: 13px;
+  padding: 4px 6px;
+}
+
+.halo-calendar .fc-daygrid-event-dot {
+  display: none;
+}
+
+.halo-calendar .fc-event-title,
+.halo-calendar .fc-event-time {
+  color: #0f172a;
+}
+
+.halo-calendar-event-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.halo-calendar .fc-highlight {
+  background: rgba(78, 169, 219, 0.15);
+  border-radius: 16px;
+}
+
+.halo-calendar .fc-popover {
+  border-radius: 18px;
+  border: 1px solid #dbe8f0;
+  box-shadow: 0 20px 45px -32px rgba(15, 23, 42, 0.4);
 }

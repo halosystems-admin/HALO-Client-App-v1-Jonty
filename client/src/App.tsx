@@ -3,14 +3,11 @@ import { Sidebar } from './components/Sidebar';
 import { PatientWorkspace } from './pages/PatientWorkspace';
 import { Toast } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
-import { checkAuth, getLoginUrl, logout, fetchAllPatients, warmAndListFiles, createPatient, deletePatient, loadSettings, saveSettings, ApiError, fetchTodayEvents, extractPatientSticker } from './services/api';
+import { checkAuth, getLoginUrl, logout, fetchAllPatients, warmAndListFiles, createPatient, deletePatient, loadSettings, saveSettings, ApiError, extractPatientSticker } from './services/api';
 import type { Patient, UserSettings, CalendarEvent } from '../../shared/types';
 import type { StickerExtractedData } from './services/api';
 import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, ScanLine, Loader2 } from 'lucide-react';
 import { CalendarPage } from './pages/CalendarPage';
-
-const ENABLE_EXPANDED_CALENDAR =
-  import.meta.env.VITE_ENABLE_EXPANDED_CALENDAR !== 'false';
 
 export const App = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -61,8 +58,6 @@ export const App = () => {
   );
 
   // Calendar / bookings
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarPrepEvent, setCalendarPrepEvent] = useState<CalendarEvent | null>(null);
   const [activeMainView, setActiveMainView] = useState<'workspace' | 'calendar'>('workspace');
 
@@ -131,34 +126,6 @@ export const App = () => {
             if (res.settings) setUserSettings(res.settings);
           }).catch(() => {});
 
-          // Load today\u2019s calendar events in background
-          setCalendarLoading(true);
-          fetchTodayEvents()
-            .then(({ events }) => {
-              // Best-effort name match here so sidebar calendar gets patientId
-              const normalize = (name: string) => name.trim().toLowerCase();
-              const mapped = events.map((ev) => {
-                const title = ev.title?.trim().toLowerCase() || '';
-                let patientId: string | undefined;
-                if (title) {
-                  const byExact = loadedPatients.find(p => normalize(p.name) === title);
-                  if (byExact) {
-                    patientId = byExact.id;
-                  } else if (title.includes(',')) {
-                    const [last, first] = title.split(',').map(s => s.trim());
-                    const reordered = `${first} ${last}`.toLowerCase();
-                    const byReordered = loadedPatients.find(p => normalize(p.name) === reordered);
-                    if (byReordered) patientId = byReordered.id;
-                  }
-                }
-                return { ...ev, patientId };
-              });
-              setCalendarEvents(mapped);
-            })
-            .catch(() => {
-              setCalendarEvents([]);
-            })
-            .finally(() => setCalendarLoading(false));
         }
       } catch (error) {
         console.error('Session check failed:', error);
@@ -282,13 +249,6 @@ export const App = () => {
     setPatientToDelete(patient);
   };
 
-  const handleSelectCalendarEvent = (event: CalendarEvent) => {
-    if (!event.patientId) return;
-    selectPatient(event.patientId);
-    setCalendarPrepEvent(event);
-    setActiveMainView('workspace');
-  };
-
   const confirmDelete = async () => {
     if (!patientToDelete) return;
     setLoading(true);
@@ -352,30 +312,31 @@ export const App = () => {
           patients={patients}
           selectedPatientId={selectedPatientId}
           recentPatientIds={recentPatientIds}
-          onSelectPatient={selectPatient}
+          onSelectPatient={(id) => {
+            setActiveMainView('workspace');
+            selectPatient(id);
+          }}
           onCreatePatient={openCreateModal}
           onDeletePatient={handleDeleteRequest}
           onLogout={handleLogout}
           onOpenSettings={() => setShowSettings(true)}
           userEmail={userEmail}
-          calendarEvents={calendarEvents}
-          calendarLoading={calendarLoading}
-          onSelectCalendarEvent={handleSelectCalendarEvent}
-          onOpenFullCalendar={
-            ENABLE_EXPANDED_CALENDAR ? () => setActiveMainView('calendar') : undefined
-          }
+          activeMainView={activeMainView}
+          onOpenPatients={() => setActiveMainView('workspace')}
+          onOpenCalendar={() => setActiveMainView('calendar')}
         />
       </div>
 
       <div className={`flex-1 flex flex-col h-screen relative ${!selectedPatientId ? 'hidden md:flex' : 'flex'}`}>
-        {ENABLE_EXPANDED_CALENDAR && activeMainView === 'calendar' ? (
+        {activeMainView === 'calendar' ? (
           <CalendarPage
             patients={patients}
-            onSelectPatientFromEvent={(id) => {
-              selectPatient(id);
+            onSelectPatientFromEvent={(event) => {
+              if (!event.patientId) return;
+              selectPatient(event.patientId);
+              setCalendarPrepEvent(event);
               setActiveMainView('workspace');
             }}
-            onClose={() => setActiveMainView('workspace')}
           />
         ) : activePatient ? (
           <PatientWorkspace

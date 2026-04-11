@@ -47,6 +47,26 @@ function invalidateFilesCacheForFolder(folderId: string): void {
   }
 }
 
+function getDriveErrorDetails(err: unknown): { status: number; message: string } | null {
+  if (!(err instanceof Error)) return null;
+
+  const match = err.message.match(/^\[Drive (\d+)\]\s+(.+)$/);
+  if (!match) return null;
+
+  const status = Number(match[1]);
+  let message = match[2];
+
+  if (
+    status === 403 &&
+    /Google Drive API has not been used in project/i.test(message)
+  ) {
+    message =
+      'Google Drive API is not enabled for the connected Google Cloud project. Enable Drive API in Google Cloud, wait a few minutes, then try again.';
+  }
+
+  return { status, message };
+}
+
 // --- Routes ---
 
 // GET /patients?page=<token>&pageSize=<number>
@@ -99,6 +119,11 @@ router.get('/patients', async (req: Request, res: Response) => {
     res.json({ patients, nextPage: data.nextPageToken || null });
   } catch (err) {
     console.error('Fetch patients error:', err);
+    const driveError = getDriveErrorDetails(err);
+    if (driveError) {
+      res.status(driveError.status).json({ error: driveError.message });
+      return;
+    }
     res.status(500).json({ error: 'Failed to fetch patients.' });
   }
 });
@@ -163,12 +188,8 @@ router.post('/patients', async (req: Request, res: Response) => {
     const token = req.session.accessToken!;
     const rootId = await getHaloRootFolder(token);
 
-    const createRes = await fetch(`${driveApi}/files`, {
+    const folder = await driveRequest(token, '/files', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({
         name: `${name}__${dob}__${sex}`,
         parents: [rootId],
@@ -182,7 +203,6 @@ router.post('/patients', async (req: Request, res: Response) => {
       }),
     });
 
-    const folder = (await createRes.json()) as { id: string };
     res.json({
       id: folder.id,
       name,
@@ -193,6 +213,11 @@ router.post('/patients', async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error('Create patient error:', err);
+    const driveError = getDriveErrorDetails(err);
+    if (driveError) {
+      res.status(driveError.status).json({ error: driveError.message });
+      return;
+    }
     res.status(500).json({ error: 'Failed to create patient.' });
   }
 });
