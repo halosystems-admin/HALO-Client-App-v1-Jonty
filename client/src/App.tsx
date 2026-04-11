@@ -3,9 +3,11 @@ import { Sidebar } from './components/Sidebar';
 import { PatientWorkspace } from './pages/PatientWorkspace';
 import { Toast } from './components/Toast';
 import { SettingsModal } from './components/SettingsModal';
+import { UploadHud } from './components/UploadHud';
 import { checkAuth, getLoginUrl, logout, fetchAllPatients, warmAndListFiles, createPatient, deletePatient, loadSettings, saveSettings, ApiError, extractPatientSticker } from './services/api';
 import type { Patient, UserSettings, CalendarEvent } from '../../shared/types';
 import type { StickerExtractedData } from './services/api';
+import type { UploadHudState } from './components/UploadHud';
 import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, ScanLine, Loader2 } from 'lucide-react';
 import { CalendarPage } from './pages/CalendarPage';
 
@@ -60,6 +62,27 @@ export const App = () => {
   // Calendar / bookings
   const [calendarPrepEvent, setCalendarPrepEvent] = useState<CalendarEvent | null>(null);
   const [activeMainView, setActiveMainView] = useState<'workspace' | 'calendar'>('workspace');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('halo_sidebarCollapsed') === '1';
+  });
+  const [uploadHudState, setUploadHudState] = useState<UploadHudState | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('halo_sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!uploadHudState || uploadHudState.phase !== 'success') return;
+    const timeoutId = window.setTimeout(() => {
+      setUploadHudState((current) =>
+        current?.phase === 'success' ? null : current
+      );
+    }, 2600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [uploadHudState]);
 
   // Persist selected patient to sessionStorage so it survives page refresh
   // Also track recently opened patients in localStorage
@@ -328,6 +351,8 @@ export const App = () => {
           activeMainView={activeMainView}
           onOpenPatients={() => setActiveMainView('workspace')}
           onOpenCalendar={() => setActiveMainView('calendar')}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         />
       </div>
 
@@ -350,6 +375,7 @@ export const App = () => {
             onDataChange={refreshPatients}
             onToast={showToast}
             templateId={userSettings?.templateId || 'clinical_note'}
+            onUploadHudChange={setUploadHudState}
             calendarPrepEvent={
               calendarPrepEvent && calendarPrepEvent.patientId === activePatient.id
                 ? calendarPrepEvent
@@ -388,6 +414,8 @@ export const App = () => {
           onClose={() => setToast(null)}
         />
       )}
+
+      {uploadHudState && <UploadHud state={uploadHudState} />}
 
       {/* SETTINGS MODAL */}
       <SettingsModal

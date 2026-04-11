@@ -27,7 +27,7 @@ import {
   savePatientSession,
 } from '../services/api';
 import {
-  Upload, Calendar, Clock, CheckCircle2, ChevronLeft, Loader2,
+  Upload, Calendar, Clock, ChevronLeft, Loader2,
   CloudUpload, Pencil, X, Trash2, FolderOpen, MessageCircle,
   FolderPlus, ChevronRight, ExternalLink, FileText, Layers, Plus,
   History, CreditCard,
@@ -37,6 +37,7 @@ import { FileViewer } from '../components/FileViewer';
 import { FileBrowser } from '../components/FileBrowser';
 import { NoteEditor } from '../components/NoteEditor';
 import { PatientChat } from '../components/PatientChat';
+import type { UploadHudState } from '../components/UploadHud';
 import { getErrorMessage } from '../utils/formatting';
 
 const MAX_MAIN_COMPLAINT_LEN = 80;
@@ -89,6 +90,14 @@ function serializeSessionNotes(notes: HaloNote[]) {
   }));
 }
 
+function buildNotePreviewSignature(note: HaloNote): string {
+  return JSON.stringify({
+    title: note.title,
+    templateId: note.template_id,
+    text: getNoteText(note),
+  });
+}
+
 /** Fallback when Halo get_templates fails or returns empty; use real IDs from Halo when possible to avoid 404. */
 const DEFAULT_TEMPLATE_OPTIONS: Array<{ id: string; name: string }> = [
   { id: 'clinical_note', name: 'Clinical Note' },
@@ -137,10 +146,11 @@ interface Props {
   onDataChange: () => void;
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   templateId?: string;
+  onUploadHudChange?: (state: UploadHudState | null) => void;
   calendarPrepEvent?: CalendarEvent | null;
 }
 
-export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, templateId: propTemplateId, calendarPrepEvent }) => {
+export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, templateId: propTemplateId, onUploadHudChange, calendarPrepEvent }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [notes, setNotes] = useState<HaloNote[]>([]);
   const [templateId, setTemplateId] = useState(propTemplateId || 'clinical_note');
@@ -158,8 +168,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat' | 'sessions'>('overview');
   const [savingNoteIndex, setSavingNoteIndex] = useState<number | null>(null);
-  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
   const [showCustomAiNoteModal, setShowCustomAiNoteModal] = useState(false);
   const [customAiPrompt, setCustomAiPrompt] = useState('');
@@ -225,6 +233,56 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [contextDriveFiles, setContextDriveFiles] = useState<DriveFile[]>([]);
   const [contextDriveLoading, setContextDriveLoading] = useState(false);
   const [contextDriveSelectedIds, setContextDriveSelectedIds] = useState<string[]>([]);
+  const previewUrlStoreRef = useRef<Record<string, string>>({});
+  const [notePreviewUrls, setNotePreviewUrls] = useState<Record<string, string>>({});
+  const [notePreviewErrors, setNotePreviewErrors] = useState<Record<string, string>>({});
+  const [notePreviewSignatures, setNotePreviewSignatures] = useState<Record<string, string>>({});
+  const [noteViewModes, setNoteViewModes] = useState<Record<string, 'edit' | 'preview'>>({});
+  const [previewLoadingNoteId, setPreviewLoadingNoteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewUrlStoreRef.current).forEach((url) => URL.revokeObjectURL(url));
+      previewUrlStoreRef.current = {};
+    };
+  }, []);
+
+  useEffect(() => {
+    const activeIds = new Set(notes.map((note) => note.noteId));
+
+    setNotePreviewUrls((prev) => {
+      const next: Record<string, string> = {};
+      for (const [noteId, url] of Object.entries(prev)) {
+        if (activeIds.has(noteId)) {
+          next[noteId] = url;
+        } else {
+          URL.revokeObjectURL(url);
+        }
+      }
+      previewUrlStoreRef.current = next;
+      return next;
+    });
+
+    setNotePreviewErrors((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([noteId]) => activeIds.has(noteId))
+      )
+    );
+    setNotePreviewSignatures((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([noteId]) => activeIds.has(noteId))
+      )
+    );
+    setNoteViewModes((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([noteId]) => activeIds.has(noteId))
+      ) as Record<string, 'edit' | 'preview'>
+    );
+
+    if (previewLoadingNoteId && !activeIds.has(previewLoadingNoteId)) {
+      setPreviewLoadingNoteId(null);
+    }
+  }, [notes, previewLoadingNoteId]);
 
   const isFolder = (file: DriveFile): boolean => file.mimeType === FOLDER_MIME_TYPE;
 
@@ -279,7 +337,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       setFiles([]);
       setChatMessages([]);
       setChatInput("");
-      setUploadMessage(null);
       setCurrentFolderId(patient.id);
       setBreadcrumbs([{ id: patient.id, name: patient.name }]);
       setUploadTargetFolderId(patient.id);
@@ -470,38 +527,52 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     setShowContextDrivePicker(false);
   };
 
+  const updateUploadHud = useCallback((state: UploadHudState | null) => {
+    onUploadHudChange?.(state);
+  }, [onUploadHudChange]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
     const targetId = uploadTargetFolderId;
+    let progress = 10;
 
-    setStatus(AppStatus.UPLOADING);
-    setUploadProgress(10);
-    setUploadMessage(`Uploading ${file.name}...`);
+    updateUploadHud({
+      phase: 'uploading',
+      title: file.name,
+      detail: `Uploading to ${uploadTargetLabel}`,
+      progress,
+    });
 
     // Track interval in a ref so it's cleaned up on unmount
     if (uploadIntervalRef.current) clearInterval(uploadIntervalRef.current);
     uploadIntervalRef.current = setInterval(() => {
-      setUploadProgress(prev => (prev >= 90 ? 90 : prev + 10));
+      progress = progress >= 90 ? 90 : progress + 10;
+      updateUploadHud({
+        phase: 'uploading',
+        title: file.name,
+        detail: `Uploading to ${uploadTargetLabel}`,
+        progress,
+      });
     }, 200);
 
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 1600));
     if (uploadIntervalRef.current) {
       clearInterval(uploadIntervalRef.current);
       uploadIntervalRef.current = null;
     }
-    setUploadProgress(100);
-
-    setStatus(AppStatus.ANALYZING);
-    setUploadMessage(null);
 
     const performUpload = async (base64?: string) => {
       let finalName = file.name;
       try {
         if (base64 && file.type.startsWith('image/')) {
-          setUploadMessage("HALO is analyzing visual features...");
+          updateUploadHud({
+            phase: 'processing',
+            title: file.name,
+            detail: 'Analyzing image and preparing the upload',
+            progress: Math.max(progress, 92),
+          });
           finalName = await analyzeAndRenameImage(base64);
-          setUploadMessage(`AI Renamed: ${finalName}`);
         }
       } catch {
         // AI rename not available
@@ -509,7 +580,13 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
 
       try {
         const uploaded = await uploadFile(targetId, file, finalName);
-        await loadFolderContents(currentFolderId);
+        updateUploadHud({
+          phase: 'success',
+          title: finalName,
+          detail: `Saved to ${uploadTargetLabel}`,
+          progress: 100,
+        });
+        await silentRefresh();
         onToast(`File uploaded to "${uploadTargetLabel}".`, 'success');
 
         // Best-effort: ask Gemini to describe the uploaded file for future context
@@ -526,6 +603,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
           // Description is optional; ignore failures
         }
       } catch (err) {
+        updateUploadHud(null);
         onToast(getErrorMessage(err), 'error');
       }
       setStatus(AppStatus.IDLE);
@@ -585,23 +663,68 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     [patient.name, templateOptions]
   );
 
-  const handleLoadPreviewPdf = useCallback(async (noteIndex: number) => {
+  const loadNotePreview = useCallback(async (noteIndex: number, force = false) => {
     const note = notes[noteIndex];
-    const text = note ? getNoteText(note) : '';
+    if (!note) return;
+
+    const signature = buildNotePreviewSignature(note);
+    const cachedSignature = notePreviewSignatures[note.noteId];
+    const cachedUrl = notePreviewUrls[note.noteId];
+    if (!force && cachedUrl && cachedSignature === signature) {
+      return;
+    }
+
+    setPreviewLoadingNoteId(note.noteId);
+    setNotePreviewErrors((prev) => {
+      if (!prev[note.noteId]) return prev;
+      const next = { ...prev };
+      delete next[note.noteId];
+      return next;
+    });
+
+    const text = getNoteText(note);
     if (!text.trim()) {
+      setPreviewLoadingNoteId((prev) => (prev === note.noteId ? null : prev));
       throw new Error('There is no note content to preview yet.');
     }
 
     const tplId = note.template_id || templateId;
     const fileName = buildNoteFileName(tplId, note.title || 'Note');
-    return previewNotePdf({
-      patientId: patient.id,
-      template_id: tplId,
-      text,
-      fileName,
-      user_id: getHaloUserForTemplate(tplId),
-    });
-  }, [notes, patient.id, templateId, buildNoteFileName]);
+    try {
+      const blob = await previewNotePdf({
+        patientId: patient.id,
+        template_id: tplId,
+        text,
+        fileName,
+        user_id: getHaloUserForTemplate(tplId),
+      });
+      const nextUrl = URL.createObjectURL(blob);
+      const previousUrl = previewUrlStoreRef.current[note.noteId];
+      if (previousUrl && previousUrl !== nextUrl) {
+        URL.revokeObjectURL(previousUrl);
+      }
+      const nextUrlMap = {
+        ...previewUrlStoreRef.current,
+        [note.noteId]: nextUrl,
+      };
+      previewUrlStoreRef.current = nextUrlMap;
+      setNotePreviewUrls(nextUrlMap);
+      setNotePreviewSignatures((prev) => ({
+        ...prev,
+        [note.noteId]: signature,
+      }));
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unable to generate the PDF preview.';
+      setNotePreviewErrors((prev) => ({
+        ...prev,
+        [note.noteId]: message,
+      }));
+      throw err;
+    } finally {
+      setPreviewLoadingNoteId((prev) => (prev === note.noteId ? null : prev));
+    }
+  }, [notes, notePreviewSignatures, notePreviewUrls, patient.id, templateId, buildNoteFileName]);
 
   const handleSaveAsDocx = useCallback(async (noteIndex: number) => {
     const note = notes[noteIndex];
@@ -970,7 +1093,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
           dirty: true,
         };
         setNotes([newNote]);
-        setUploadMessage(null);
       } catch (err) {
         if (!cancelled) onToast(getErrorMessage(err), 'error');
       }
@@ -1194,50 +1316,32 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
         </div>
 
         <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto">
-          {status === AppStatus.UPLOADING ? (
-            <div className="w-48">
-              <div className="flex justify-between text-xs font-semibold text-cyan-700 mb-1">
-                <span>Uploading...</span><span>{uploadProgress}%</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                <div className="bg-cyan-500 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
-                <HeaderConsultationRecorder
-                  onBeforeStart={prepareFreshRecordingSession}
-                  onLiveTranscriptUpdate={handleLiveTranscriptUpdate}
-                  onLiveStopped={handleLiveStopped}
-                  onError={(msg: string) => onToast(msg, 'error')}
-                />
-                <button
-                  onClick={openUploadPicker}
-                  className="inline-flex h-14 min-w-[180px] items-center justify-center gap-2 rounded-[22px] border border-[#cfe3ef] bg-white px-5 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b]"
-                >
-                  <Upload className="w-4 h-4" /> Upload File
-                </button>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleFileUpload}
-                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
-              />
-            </>
-          )}
-          {uploadMessage && status !== AppStatus.UPLOADING && (
-            <div className="w-full md:w-auto flex items-center gap-2 text-xs font-semibold text-cyan-700 bg-cyan-50 border border-cyan-200 px-3 py-1.5 rounded-lg">
-              <CheckCircle2 className="w-3.5 h-3.5" /> {uploadMessage}
-            </div>
-          )}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
+            <HeaderConsultationRecorder
+              onBeforeStart={prepareFreshRecordingSession}
+              onLiveTranscriptUpdate={handleLiveTranscriptUpdate}
+              onLiveStopped={handleLiveStopped}
+              onError={(msg: string) => onToast(msg, 'error')}
+            />
+            <button
+              onClick={openUploadPicker}
+              className="inline-flex h-14 min-w-[180px] items-center justify-center gap-2 rounded-[22px] border border-[#cfe3ef] bg-white px-5 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b]"
+            >
+              <Upload className="w-4 h-4" /> Upload File
+            </button>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFileUpload}
+            accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+          />
         </div>
       </div>
 
       <div className="border-b border-slate-200 bg-white px-4 md:px-8">
-        <div className="mx-auto flex max-w-6xl gap-1 overflow-x-auto">
+        <div className="mx-auto flex max-w-[1480px] gap-1 overflow-x-auto">
           {[
             { id: 'overview', label: 'Folder' },
             { id: 'notes', label: 'Scribe' },
@@ -1274,7 +1378,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             activeTab === 'chat'
               ? 'h-full'
               : activeTab === 'notes'
-                ? 'mx-auto h-full max-w-6xl'
+                ? 'mx-auto h-full max-w-[1480px]'
                 : 'mx-auto max-w-6xl'
           }
         >
@@ -1417,7 +1521,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                       </div>
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-5">
-                      <div className="mx-auto max-w-4xl whitespace-pre-wrap rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm leading-7 text-slate-700 shadow-sm">
+                      <div className="mx-auto max-w-[1320px] whitespace-pre-wrap rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm leading-7 text-slate-700 shadow-sm">
                         {pendingTranscript}
                       </div>
                     </div>
@@ -1523,14 +1627,14 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                         </div>
 
                         <span className="text-xs text-slate-400">
-                          {isLiveStreaming ? 'Live transcription in progress…' : 'Structured notes stay editable here.'}
+                          {isLiveStreaming ? 'Live transcription in progress…' : ' '}
                         </span>
                       </div>
                     </div>
 
                     {consultSubTab === 'transcript' ? (
                       <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-5">
-                        <div className="mx-auto flex max-w-4xl flex-col gap-3">
+                        <div className="mx-auto flex max-w-[1320px] flex-col gap-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-sm font-semibold text-slate-800">
                               Consultation transcript
@@ -1551,7 +1655,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                       </div>
                     ) : consultSubTab === 'context' ? (
                       <div className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-5">
-                        <div className="mx-auto flex max-w-4xl flex-col gap-3">
+                        <div className="mx-auto flex max-w-[1320px] flex-col gap-3">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
                               <p className="text-sm font-semibold text-slate-800">
@@ -1594,18 +1698,21 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                         <NoteEditor
                           notes={notes}
                           activeIndex={consultSubTab}
-                          onActiveIndexChange={(i) => { setConsultSubTab(i); }}
                           onNoteChange={handleNoteChange}
                           status={status}
-                          templateId={templateId}
-                          templateOptions={templateOptions}
-                          onTemplateChange={setTemplateId}
                           onSaveAsDocx={handleSaveAsDocx}
-                          onSaveAll={handleSaveAll}
+                          onSave={handleSaveAll}
                           onEmail={handleEmail}
-                          onLoadPreviewPdf={handleLoadPreviewPdf}
+                          onLoadPreview={loadNotePreview}
                           savingNoteIndex={savingNoteIndex}
-                          showNoteTabs={false}
+                          previewUrls={notePreviewUrls}
+                          previewErrors={notePreviewErrors}
+                          previewSignatures={notePreviewSignatures}
+                          previewLoadingNoteId={previewLoadingNoteId}
+                          viewModes={noteViewModes}
+                          onViewModeChange={(noteId, mode) =>
+                            setNoteViewModes((prev) => ({ ...prev, [noteId]: mode }))
+                          }
                         />
                       </div>
                     ) : null}
@@ -1897,17 +2004,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               <button onClick={confirmDeleteFile} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white px-4 py-3 rounded-xl font-bold shadow-lg shadow-rose-500/20 transition">Delete</button>
             </div>
           </div>
-        </div>
-      )}
-
-      {status === AppStatus.ANALYZING && (
-        <div className="fixed inset-0 bg-white/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-slate-200 rounded-full"></div>
-            <div className="absolute top-0 left-0 w-16 h-16 border-4 border-sky-500 rounded-full border-t-transparent animate-spin"></div>
-          </div>
-          <p className="text-sky-900 font-bold text-lg mt-6">HALO is analyzing...</p>
-          <p className="text-slate-500 text-sm mt-1">Extracting clinical concepts &amp; tagging files</p>
         </div>
       )}
 

@@ -445,13 +445,13 @@ export const PatientChat: React.FC<PatientChatProps> = ({
             </div>
           )}
 
-          <div className="flex items-end gap-3 rounded-[30px] border border-[#d8e7ef] bg-[#f8fbfd] p-3 shadow-sm">
+          <div className="flex items-end gap-2.5 rounded-[24px] border border-[#d8e7ef] bg-[#f8fbfd] px-3 py-2.5 shadow-sm">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={chatLoading || isRecording || isTranscribing}
-                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[#d8e7ef] bg-white text-slate-500 transition hover:border-[#a8d5ea] hover:text-[#2f84b4] disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-10 w-10 items-center justify-center rounded-[18px] border border-[#d8e7ef] bg-white text-slate-500 transition hover:border-[#a8d5ea] hover:text-[#2f84b4] disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Attach a file"
               >
                 <Paperclip className="h-4 w-4" />
@@ -468,7 +468,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
                 type="button"
                 onClick={isRecording ? () => void stopRecording() : () => void startRecording()}
                 disabled={chatLoading || isTranscribing}
-                className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`flex h-10 w-10 items-center justify-center rounded-[18px] border transition disabled:cursor-not-allowed disabled:opacity-50 ${
                   isRecording
                     ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
                     : 'border-[#d8e7ef] bg-white text-slate-500 hover:border-[#a8d5ea] hover:text-[#2f84b4]'
@@ -490,7 +490,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
                 }
               }}
               placeholder="Ask about notes, history, medications, or upload a document and tell HALO what to look for..."
-              className="min-h-[52px] flex-1 resize-none border-0 bg-transparent px-1 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400"
+              className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400"
               disabled={chatLoading || isTranscribing}
             />
 
@@ -498,7 +498,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
               type="button"
               onClick={() => void handleSend()}
               disabled={!chatInput.trim() || chatLoading || isRecording || isTranscribing}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#3f9fcc] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f84b4] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[18px] bg-[#3f9fcc] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f84b4] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
               Send

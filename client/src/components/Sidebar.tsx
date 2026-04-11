@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { Patient } from '../../../shared/types';
 import {
   Plus, LogOut, Search, Trash2, ChevronDown,
-  Settings, Loader2, Calendar as CalendarIcon, Users, Clock,
+  Settings, Loader2, Calendar as CalendarIcon, Users, Clock, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { searchPatientsByConcept } from '../services/api';
 
@@ -19,6 +19,8 @@ interface SidebarProps {
   activeMainView?: 'workspace' | 'calendar';
   onOpenPatients?: () => void;
   onOpenCalendar?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,6 +36,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeMainView = 'workspace',
   onOpenPatients,
   onOpenCalendar,
+  collapsed = false,
+  onToggleCollapse,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [aiSearchResults, setAiSearchResults] = useState<string[] | null>(null);
@@ -137,11 +141,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
 
   return (
-    <div className="w-64 bg-white h-full flex flex-col border-r border-slate-200 shadow-sm">
+    <div
+      className={`bg-white h-full flex flex-col border-r border-slate-200 shadow-sm transition-[width] duration-300 ${
+        collapsed ? 'w-[88px]' : 'w-64'
+      }`}
+    >
       {/* Logo */}
-      <div className="px-5 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl overflow-hidden shadow-sm">
+      <div className={`relative border-b border-slate-100 ${collapsed ? 'px-3 py-4' : 'px-5 py-4'}`}>
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
+          <div className="w-9 h-9 rounded-xl overflow-hidden shadow-sm shrink-0">
             <img
               src="/halo-icon.png"
               alt="HALO"
@@ -149,45 +157,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
               draggable={false}
             />
           </div>
-          <div>
-            <h1 className="font-bold text-slate-800 text-base leading-tight">HALO</h1>
-            <p className="text-[10px] text-cyan-600 font-semibold tracking-widest uppercase">
-              Patient Drive
-            </p>
-          </div>
+          {!collapsed && (
+            <div>
+              <h1 className="font-bold text-slate-800 text-base leading-tight">HALO</h1>
+              <p className="text-[10px] text-cyan-600 font-semibold tracking-widest uppercase">
+                Patient Drive
+              </p>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className={`hidden md:inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${
+              collapsed ? 'absolute right-3 top-4' : 'ml-auto'
+            }`}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+          </button>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3 custom-scrollbar">
+      <nav className={`flex-1 overflow-y-auto custom-scrollbar ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
 
         {/* ── PATIENTS SECTION ── */}
         <div className="mb-1">
           <button
             type="button"
             onClick={() => {
+              if (collapsed) {
+                onToggleCollapse?.();
+                onOpenPatients?.();
+                return;
+              }
               setPatientsExpanded(v => !v);
               onOpenPatients?.();
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            title="Patients"
+            className={`w-full flex items-center rounded-xl text-sm font-medium transition-all ${
               patientsActive
                 ? 'bg-cyan-50 text-cyan-700'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
-            }`}
+            } ${collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}`}
           >
             <Users
               size={17}
               className={patientsActive ? 'text-cyan-600' : 'text-slate-400'}
             />
-            <span className="flex-1 text-left">Patients</span>
-            <span className="text-[11px] text-slate-400 mr-1">{patients.length}</span>
-            <ChevronDown
-              size={14}
-              className={`transition-transform text-slate-400 ${patientsExpanded ? 'rotate-180' : ''}`}
-            />
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left">Patients</span>
+                <span className="mr-1 text-[11px] text-slate-400">{patients.length}</span>
+                <ChevronDown
+                  size={14}
+                  className={`text-slate-400 transition-transform ${patientsExpanded ? 'rotate-180' : ''}`}
+                />
+              </>
+            )}
           </button>
 
-          {patientsExpanded && (
+          {!collapsed && patientsExpanded && (
             <div className="mt-2 space-y-1 pl-1">
               {/* Search */}
               <div className="relative mb-3">
@@ -247,40 +278,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => {
               onOpenCalendar?.();
             }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            title="Calendar"
+            className={`w-full flex items-center rounded-xl text-sm font-medium transition-all ${
               calendarActive
                 ? 'bg-cyan-50 text-cyan-700'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
-            }`}
+            } ${collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}`}
           >
             <CalendarIcon
               size={17}
               className={calendarActive ? 'text-cyan-600' : 'text-slate-400'}
             />
-            <span className="flex-1 text-left">Calendar</span>
-            <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Week
-            </span>
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left">Calendar</span>
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Week
+                </span>
+              </>
+            )}
           </button>
         </div>
       </nav>
 
       {/* Bottom: Create + User */}
-      <div className="border-t border-slate-100 p-3 space-y-3">
+      <div className={`border-t border-slate-100 ${collapsed ? 'p-2 space-y-2' : 'p-3 space-y-3'}`}>
         <button
           onClick={onCreatePatient}
-          className="w-full bg-cyan-600 hover:bg-cyan-500 text-white py-2.5 rounded-xl font-semibold text-sm transition-all shadow-sm shadow-cyan-600/20 flex items-center justify-center gap-2 active:scale-[0.98]"
+          title="New Patient Folder"
+          className={`w-full bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-semibold text-sm transition-all shadow-sm shadow-cyan-600/20 flex items-center justify-center active:scale-[0.98] ${
+            collapsed ? 'h-11 px-0' : 'gap-2 py-2.5'
+          }`}
         >
-          <Plus size={16} /> New Patient Folder
+          <Plus size={16} />
+          {!collapsed && 'New Patient Folder'}
         </button>
 
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between px-1'}`}>
+          <div className={`flex items-center gap-2 min-w-0 ${collapsed ? 'hidden' : ''}`}>
             <div className="w-7 h-7 rounded-full bg-cyan-100 text-cyan-700 flex items-center justify-center text-[11px] font-bold shrink-0">
               {userInitials}
             </div>
             <p className="text-[11px] text-slate-500 truncate">{userEmail || 'admin'}</p>
           </div>
+          {collapsed && (
+            <div className="mb-1 flex h-7 w-7 items-center justify-center rounded-full bg-cyan-100 text-[11px] font-bold text-cyan-700">
+              {userInitials}
+            </div>
+          )}
           <div className="flex items-center gap-0.5 shrink-0">
             <button
               onClick={onOpenSettings}
