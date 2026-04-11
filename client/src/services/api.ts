@@ -201,6 +201,24 @@ interface PatientsResponse {
   nextPage: string | null;
 }
 
+export interface PatientBillingPayload {
+  medicalAid?: string;
+  medicalAidPlan?: string;
+  medicalAidNumber?: string;
+}
+
+export interface PatientCreatePayload extends PatientBillingPayload {
+  name: string;
+  dob: string;
+  sex: 'M' | 'F';
+}
+
+export interface PatientUpdatePayload extends PatientBillingPayload {
+  name?: string;
+  dob?: string;
+  sex?: string;
+}
+
 export const fetchPatients = (page?: string): Promise<PatientsResponse> => {
   const params = new URLSearchParams();
   params.set('pageSize', '100');
@@ -221,13 +239,18 @@ export async function fetchAllPatients(): Promise<Patient[]> {
   return all;
 }
 
-export const createPatient = (name: string, dob: string, sex: 'M' | 'F') =>
+export const createPatient = (
+  name: string,
+  dob: string,
+  sex: 'M' | 'F',
+  extras: PatientBillingPayload = {}
+) =>
   request<Patient>('/api/drive/patients', {
     method: 'POST',
-    body: JSON.stringify({ name, dob, sex }),
+    body: JSON.stringify({ name, dob, sex, ...extras }),
   });
 
-export const updatePatient = (id: string, updates: { name?: string; dob?: string; sex?: string }) =>
+export const updatePatient = (id: string, updates: PatientUpdatePayload) =>
   request(`/api/drive/patients/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(updates),

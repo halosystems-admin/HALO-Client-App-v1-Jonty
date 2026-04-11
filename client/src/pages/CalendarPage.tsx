@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CalendarEvent, DriveFile, Patient } from '../../../shared/types';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -11,7 +11,6 @@ import {
   Clock,
   Loader2,
   Plus,
-  Users,
   X,
 } from 'lucide-react';
 import {
@@ -55,6 +54,44 @@ const getBrowserTimeZone = () =>
 const findPatientName = (patients: Patient[], id?: string) =>
   id ? patients.find((p) => p.id === id)?.name ?? '' : '';
 
+const PICKER_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, delta: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function buildPickerDays(month: Date, selectedDate: Date) {
+  const monthStart = startOfMonth(month);
+  const gridStart = new Date(monthStart);
+  const dayOffset = (monthStart.getDay() + 6) % 7;
+  gridStart.setDate(monthStart.getDate() - dayOffset);
+  const today = new Date();
+
+  return Array.from({ length: 42 }).map((_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    return {
+      iso: date.toISOString(),
+      date,
+      isCurrentMonth: date.getMonth() === month.getMonth(),
+      isSelected: isSameDay(date, selectedDate),
+      isToday: isSameDay(date, today),
+    };
+  });
+}
+
 export const CalendarPage: React.FC<Props> = ({
   patients,
   onSelectPatientFromEvent,
@@ -70,6 +107,8 @@ export const CalendarPage: React.FC<Props> = ({
   } | null>(null);
   const [currentView, setCurrentView] = useState<CalendarViewMode>('timeGridWeek');
   const [currentTitle, setCurrentTitle] = useState('');
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [pickerMonth, setPickerMonth] = useState(() => startOfMonth(new Date()));
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorState, setEditorState] = useState<EventEditorState | null>(null);
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
@@ -78,6 +117,10 @@ export const CalendarPage: React.FC<Props> = ({
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>([]);
 
   const timeZone = useMemo(getBrowserTimeZone, []);
+
+  useEffect(() => {
+    setPickerMonth(startOfMonth(currentDate));
+  }, [currentDate]);
 
   const loadEvents = useCallback(
     async (startIso: string, endIso: string) => {
@@ -107,6 +150,12 @@ export const CalendarPage: React.FC<Props> = ({
       }
       setCurrentView(arg.view.type as CalendarViewMode);
       setCurrentTitle(arg.view.title || '');
+      const apiDate =
+        calendarRef.current?.getApi().getDate() ??
+        arg.view?.calendar?.getDate?.() ??
+        arg.start ??
+        new Date();
+      setCurrentDate(new Date(apiDate));
     },
     [loadEvents]
   );
@@ -121,6 +170,10 @@ export const CalendarPage: React.FC<Props> = ({
     if (direction === 'prev') api.prev();
     if (direction === 'next') api.next();
     if (direction === 'today') api.today();
+  }, []);
+
+  const handlePickDate = useCallback((date: Date) => {
+    calendarRef.current?.getApi().gotoDate(date);
   }, []);
 
   const openCreateEditor = useCallback(
@@ -303,6 +356,7 @@ export const CalendarPage: React.FC<Props> = ({
     if (!currentRange) return '';
     const start = new Date(currentRange.start);
     const end = new Date(currentRange.end);
+    end.setDate(end.getDate() - 1);
     const fmt: Intl.DateTimeFormatOptions = {
       month: 'short',
       day: 'numeric',
@@ -314,21 +368,40 @@ export const CalendarPage: React.FC<Props> = ({
     )}`;
   }, [currentRange]);
 
+  const selectedDateLabel = useMemo(
+    () =>
+      currentDate.toLocaleDateString(undefined, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }),
+    [currentDate]
+  );
+
+  const pickerDays = useMemo(
+    () => buildPickerDays(pickerMonth, currentDate),
+    [currentDate, pickerMonth]
+  );
+
   return (
-    <div className="halo-calendar-page flex h-full flex-col bg-[linear-gradient(180deg,#f7fbfd_0%,#eef7fb_100%)]">
-      <div className="border-b border-[#dceaf2] bg-white/90 backdrop-blur-sm">
-        <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-5 md:px-8">
+    <div className="halo-calendar-page flex h-full flex-col bg-[linear-gradient(180deg,#f6fbfe_0%,#edf7fb_100%)]">
+      <div className="border-b border-[#dceaf2] bg-white/92 backdrop-blur-sm">
+        <div className="mx-auto flex w-full max-w-[1500px] flex-wrap items-center justify-between gap-4 px-5 py-5 md:px-8">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e7f5fb] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <CalendarIcon className="text-[#3b9fcd]" size={22} />
+            <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-[linear-gradient(180deg,#ebf9fd_0%,#dff4fb_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+              <CalendarIcon className="text-[#2fa7c8]" size={24} />
             </div>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#6ea7c4]">
-                Schedule
+              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#6aa9c6]">
+                Calendar
               </p>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-800">
-                Google Calendar
+              <h1 className="text-[28px] font-semibold tracking-tight text-slate-800">
+                Schedule
               </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Cleaner weekly planning with the same booking tools underneath.
+              </p>
             </div>
           </div>
 
@@ -339,7 +412,7 @@ export const CalendarPage: React.FC<Props> = ({
             </div>
             {currentRangeLabel && (
               <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-[#f8fcfe] px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
-                <Users className="h-3.5 w-3.5 text-[#55a9d3]" />
+                <CalendarIcon className="h-3.5 w-3.5 text-[#55a9d3]" />
                 {currentRangeLabel}
               </div>
             )}
@@ -364,130 +437,223 @@ export const CalendarPage: React.FC<Props> = ({
       </div>
 
       <div className="flex-1 overflow-hidden px-4 py-4 md:px-6 md:py-6">
-        <div className="mx-auto flex h-full max-w-[1440px] flex-col overflow-hidden rounded-[30px] border border-[#dbe9f1] bg-white shadow-[0_24px_60px_-35px_rgba(15,23,42,0.35)]">
-          <div className="border-b border-[#e6eff5] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfd_100%)] px-4 py-4 md:px-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-col gap-2">
-                <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[#eef8fc] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#67a7c7]">
-                  <Users className="h-3.5 w-3.5" />
-                  Day / Week / Month
-                </div>
-                <div>
-                  <h2 className="text-3xl font-semibold tracking-tight text-slate-800">
-                    {currentTitle || 'Schedule'}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Drag to move, resize to extend, and click any booking to edit it.
-                  </p>
-                </div>
+        <div className="mx-auto grid h-full max-w-[1500px] min-h-0 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <aside className="flex min-h-[340px] flex-col overflow-hidden rounded-[30px] border border-[#dbe9f1] bg-white p-5 shadow-[0_22px_55px_-36px_rgba(15,23,42,0.4)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#86adc2]">
+                  Select Date
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-800">
+                  {selectedDateLabel}
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Choose a day to anchor the schedule, then switch between day, week, and month.
+                </p>
               </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-[20px] bg-[#ebf8fc] text-[#2fa7c8]">
+                <CalendarIcon className="h-5 w-5" />
+              </div>
+            </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-                <div className="inline-flex items-center rounded-2xl border border-[#d7e6ef] bg-white p-1 shadow-sm">
-                  <button
-                    type="button"
-                    onClick={() => handleMoveCalendar('prev')}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-[#eff8fc] hover:text-[#3794c6]"
-                    aria-label="Previous period"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleMoveCalendar('next')}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-[#eff8fc] hover:text-[#3794c6]"
-                    aria-label="Next period"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleMoveCalendar('today')}
-                    className="ml-1 inline-flex h-10 items-center justify-center rounded-xl bg-[#344a5f] px-4 text-sm font-semibold text-white transition hover:bg-[#25384b]"
-                  >
-                    Today
-                  </button>
+            <div className="mt-6 flex items-center justify-between rounded-[24px] border border-[#e4eff5] bg-[#fbfdff] px-3 py-2 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setPickerMonth((prev) => addMonths(prev, -1))}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 transition hover:bg-[#eef8fc] hover:text-[#3794c6]"
+                aria-label="Previous month"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="text-center">
+                <p className="text-lg font-semibold text-slate-800">
+                  {pickerMonth.toLocaleDateString(undefined, {
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPickerMonth((prev) => addMonths(prev, 1))}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-500 transition hover:bg-[#eef8fc] hover:text-[#3794c6]"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-7 gap-2 text-center">
+              {PICKER_DAY_LABELS.map((label) => (
+                <span
+                  key={label}
+                  className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400"
+                >
+                  {label}
+                </span>
+              ))}
+              {pickerDays.map((day) => (
+                <button
+                  key={day.iso}
+                  type="button"
+                  onClick={() => handlePickDate(day.date)}
+                  className={`flex aspect-square items-center justify-center rounded-[18px] border text-sm font-semibold transition ${
+                    day.isSelected
+                      ? 'border-[#39a9c9] bg-[#39a9c9] text-white shadow-[0_12px_24px_-16px_rgba(57,169,201,0.85)]'
+                      : day.isToday
+                        ? 'border-[#b9e3ef] bg-[#eef9fd] text-[#278cb1]'
+                        : day.isCurrentMonth
+                          ? 'border-[#e4eef4] bg-white text-slate-700 hover:border-[#b8dceb] hover:bg-[#f5fbfe]'
+                          : 'border-[#edf2f6] bg-[#f5f8fb] text-slate-300 hover:text-slate-400'
+                  }`}
+                >
+                  {day.date.getDate()}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-auto pt-5">
+              <button
+                type="button"
+                onClick={() => handleMoveCalendar('today')}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-[22px] border border-[#d8e7ef] bg-[#f8fcfe] px-4 py-3 text-sm font-semibold text-[#2f84b4] transition hover:border-[#a9d7e8] hover:bg-white"
+              >
+                <CalendarIcon className="h-4 w-4" />
+                Jump to today
+              </button>
+            </div>
+          </aside>
+
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-[32px] border border-[#dbe9f1] bg-white shadow-[0_24px_60px_-35px_rgba(15,23,42,0.35)]">
+            <div className="border-b border-[#e6eff5] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfd_100%)] px-4 py-4 md:px-6">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex flex-col gap-2">
+                  <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[#eef8fc] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#67a7c7]">
+                    <CalendarIcon className="h-3.5 w-3.5" />
+                    Day / Week / Month
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-semibold tracking-tight text-slate-800">
+                      {currentTitle || 'Schedule'}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Drag to move, resize to extend, and click any booking to edit it.
+                    </p>
+                  </div>
                 </div>
 
-                <div className="inline-flex items-center rounded-2xl border border-[#d7e6ef] bg-[#f8fbfd] p-1 shadow-sm">
-                  {VIEW_OPTIONS.map((option) => (
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                  <div className="inline-flex items-center rounded-[22px] border border-[#d7e6ef] bg-white p-1 shadow-sm">
                     <button
-                      key={option.id}
                       type="button"
-                      onClick={() => handleChangeView(option.id)}
-                      className={`inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold capitalize transition ${
-                        currentView === option.id
-                          ? 'bg-[#344a5f] text-white shadow-sm'
-                          : 'text-slate-500 hover:bg-white hover:text-[#3794c6]'
-                      }`}
+                      onClick={() => handleMoveCalendar('prev')}
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-[18px] text-slate-500 transition hover:bg-[#eff8fc] hover:text-[#3794c6]"
+                      aria-label="Previous period"
                     >
-                      {option.label}
+                      <ChevronLeft className="h-4 w-4" />
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => handleMoveCalendar('next')}
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-[18px] text-slate-500 transition hover:bg-[#eff8fc] hover:text-[#3794c6]"
+                      aria-label="Next period"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveCalendar('today')}
+                      className="ml-1 inline-flex h-11 items-center justify-center rounded-[18px] bg-[#39a9c9] px-4 text-sm font-semibold text-white transition hover:bg-[#278cb1]"
+                    >
+                      Today
+                    </button>
+                  </div>
+
+                  <div className="inline-flex items-center rounded-[22px] border border-[#d7e6ef] bg-[#f8fbfd] p-1 shadow-sm">
+                    {VIEW_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => handleChangeView(option.id)}
+                        className={`inline-flex h-11 items-center justify-center rounded-[18px] px-4 text-sm font-semibold capitalize transition ${
+                          currentView === option.id
+                            ? 'bg-[#1d3554] text-white shadow-sm'
+                            : 'text-slate-500 hover:bg-white hover:text-[#3794c6]'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex-1 overflow-hidden bg-[#f7fbfd] p-2 md:p-4">
-            <div className="h-full overflow-hidden rounded-[24px] border border-[#dce9f1] bg-white">
-              <FullCalendar
-                ref={calendarRef}
-                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-                initialView="timeGridWeek"
-                headerToolbar={false}
-                height="100%"
-                events={fcEvents}
-                selectable
-                selectMirror
-                editable
-                eventResizableFromStart
-                slotMinTime="06:00:00"
-                slotMaxTime="20:00:00"
-                weekends
-                nowIndicator
-                stickyHeaderDates
-                allDaySlot
-                expandRows
-                firstDay={1}
-                dayHeaderFormat={{
-                  weekday: 'short',
-                  month: 'numeric',
-                  day: 'numeric',
-                }}
-                slotLabelFormat={{
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  meridiem: 'short',
-                }}
-                eventTimeFormat={{
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  meridiem: 'short',
-                }}
-                datesSet={handleDatesSet}
-                select={(arg) => openCreateEditor(arg.start, arg.end)}
-                eventClick={handleEventClick}
-                eventDrop={handleEventDropOrResize}
-                eventResize={handleEventDropOrResize}
-                eventContent={(arg) => {
-                  const patientName = arg.event.extendedProps?.patientName as string | undefined;
-                  return (
-                    <div className="halo-calendar-event-inner">
-                      <div className="truncate text-[11px] font-semibold text-slate-800">
-                        {arg.timeText ? `${arg.timeText} - ${arg.event.title}` : arg.event.title}
-                      </div>
-                      {patientName && (
-                        <div className="truncate text-[10px] text-slate-500">
-                          {patientName}
-                        </div>
-                      )}
+            <div className="flex-1 overflow-hidden bg-[#f5fafc] p-3 md:p-4">
+              <div className="halo-calendar h-full overflow-hidden rounded-[26px] border border-[#dce9f1] bg-white">
+                <FullCalendar
+                  ref={calendarRef}
+                  plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+                  initialView="timeGridWeek"
+                  headerToolbar={false}
+                  height="100%"
+                  events={fcEvents}
+                  selectable
+                  selectMirror
+                  editable
+                  eventResizableFromStart
+                  slotMinTime="06:00:00"
+                  slotMaxTime="20:00:00"
+                  weekends
+                  nowIndicator
+                  stickyHeaderDates
+                  allDaySlot
+                  expandRows
+                  firstDay={1}
+                  slotLabelFormat={{
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    meridiem: 'short',
+                  }}
+                  eventTimeFormat={{
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    meridiem: 'short',
+                  }}
+                  dayHeaderContent={(arg) => (
+                    <div className="flex flex-col items-center py-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        {arg.date.toLocaleDateString(undefined, { weekday: 'short' })}
+                      </span>
+                      <span className="mt-1 text-sm font-semibold text-slate-700">
+                        {arg.date.toLocaleDateString(undefined, { day: 'numeric' })}
+                      </span>
                     </div>
-                  );
-                }}
-              />
+                  )}
+                  datesSet={handleDatesSet}
+                  select={(arg) => openCreateEditor(arg.start, arg.end)}
+                  eventClick={handleEventClick}
+                  eventDrop={handleEventDropOrResize}
+                  eventResize={handleEventDropOrResize}
+                  eventContent={(arg) => {
+                    const patientName = arg.event.extendedProps?.patientName as string | undefined;
+                    return (
+                      <div className="halo-calendar-event-inner">
+                        <div className="truncate text-[11px] font-semibold text-slate-800">
+                          {arg.timeText ? `${arg.timeText} - ${arg.event.title}` : arg.event.title}
+                        </div>
+                        {patientName && (
+                          <div className="truncate text-[10px] text-slate-500">
+                            {patientName}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          </section>
         </div>
       </div>
 

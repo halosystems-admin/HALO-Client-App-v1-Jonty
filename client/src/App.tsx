@@ -225,7 +225,11 @@ export const App = () => {
 
     setLoading(true);
     try {
-      const newP = await createPatient(newPatientName, newPatientDob, newPatientSex);
+      const newP = await createPatient(newPatientName, newPatientDob, newPatientSex, {
+        medicalAid: newPatientMedicalAid,
+        medicalAidNumber: newPatientMedicalAidNumber,
+        medicalAidPlan: newPatientMedicalAidPlan,
+      });
       if (newP) {
         await refreshPatients();
         setShowCreateModal(false);

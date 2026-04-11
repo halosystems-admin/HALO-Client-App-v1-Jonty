@@ -7,6 +7,9 @@ export interface Patient {
   sex: 'M' | 'F';
   lastVisit: string;
   alerts: string[];
+  medicalAid?: string;
+  medicalAidPlan?: string;
+  medicalAidNumber?: string;
 }
 
 export interface DriveFile {

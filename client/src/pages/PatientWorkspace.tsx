@@ -29,7 +29,7 @@ import {
   Upload, Calendar, Clock, CheckCircle2, ChevronLeft, Loader2,
   CloudUpload, Pencil, X, Trash2, FolderOpen, MessageCircle,
   FolderPlus, ChevronRight, ExternalLink, FileText, Layers, Plus,
-  History,
+  History, CreditCard,
 } from 'lucide-react';
 import { HeaderConsultationRecorder } from '../features/scribe/HeaderConsultationRecorder';
 import { FileViewer } from '../components/FileViewer';
@@ -172,6 +172,10 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [editName, setEditName] = useState("");
   const [editDob, setEditDob] = useState("");
   const [editSex, setEditSex] = useState<'M' | 'F'>('M');
+  const [editingBilling, setEditingBilling] = useState(false);
+  const [editMedicalAid, setEditMedicalAid] = useState("");
+  const [editMedicalAidPlan, setEditMedicalAidPlan] = useState("");
+  const [editMedicalAidNumber, setEditMedicalAidNumber] = useState("");
 
   const [editingFile, setEditingFile] = useState<DriveFile | null>(null);
   const [editFileName, setEditFileName] = useState("");
@@ -810,6 +814,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
         void generateNotesFromTranscript(combined, false);
       } else {
         setPendingTranscript(combined);
+        setShowAddNoteModal(false);
         setSelectedTemplatesForGenerate(['clinical_note']);
         setActiveTab('notes');
       }
@@ -963,6 +968,13 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     setEditingPatient(true);
   };
 
+  const startEditBilling = () => {
+    setEditMedicalAid(patient.medicalAid || "");
+    setEditMedicalAidPlan(patient.medicalAidPlan || "");
+    setEditMedicalAidNumber(patient.medicalAidNumber || "");
+    setEditingBilling(true);
+  };
+
   const savePatientEdit = async () => {
     if (!editName.trim() || !editDob) return;
     try {
@@ -970,6 +982,21 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       setEditingPatient(false);
       onDataChange();
       onToast('Patient details updated.', 'success');
+    } catch (err) {
+      onToast(getErrorMessage(err), 'error');
+    }
+  };
+
+  const saveBillingEdit = async () => {
+    try {
+      await updatePatient(patient.id, {
+        medicalAid: editMedicalAid,
+        medicalAidPlan: editMedicalAidPlan,
+        medicalAidNumber: editMedicalAidNumber,
+      });
+      setEditingBilling(false);
+      onDataChange();
+      onToast('Billing details updated.', 'success');
     } catch (err) {
       onToast(getErrorMessage(err), 'error');
     }
@@ -1119,6 +1146,14 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               >
                 <FolderOpen className="w-3.5 h-3.5" /> Open in Drive <ExternalLink className="w-3 h-3" />
               </a>
+              <button
+                type="button"
+                onClick={startEditBilling}
+                className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded text-slate-600 whitespace-nowrap hover:bg-sky-100 hover:text-sky-700 transition-colors"
+                title="Edit medical aid and billing details"
+              >
+                <CreditCard className="w-3.5 h-3.5" /> Billing details
+              </button>
             </div>
           </div>
         </div>
@@ -1144,7 +1179,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                 />
                 <button
                   onClick={openUploadPicker}
-                  className="inline-flex h-12 min-w-[180px] items-center justify-center gap-2 rounded-2xl border border-[#cfe3ef] bg-white px-5 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b]"
+                  className="inline-flex h-14 min-w-[180px] items-center justify-center gap-2 rounded-[22px] border border-[#cfe3ef] bg-white px-5 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b]"
                 >
                   <Upload className="w-4 h-4" /> Upload File
                 </button>
@@ -1190,8 +1225,14 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto bg-slate-50/50 px-4 py-4 md:px-6 md:py-5">
-        <div className="mx-auto max-w-6xl">
+      <div
+        className={`flex-1 ${
+          activeTab === 'chat'
+            ? 'overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5fbfe_100%)] px-0 py-0'
+            : 'overflow-y-auto bg-slate-50/50 px-4 py-4 md:px-6 md:py-5'
+        }`}
+      >
+        <div className={activeTab === 'chat' ? 'h-full' : 'mx-auto max-w-6xl'}>
 
           {activeTab === 'overview' ? (
             <FileBrowser
@@ -1618,7 +1659,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             </>
           ) : (
             <PatientChat
-              patientName={patient.name}
               chatMessages={chatMessages}
               chatInput={chatInput}
               onChatInputChange={setChatInput}
@@ -1658,6 +1698,80 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setEditingPatient(false)} className="flex-1 px-4 py-3 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition">Cancel</button>
                 <button onClick={savePatientEdit} className="flex-1 bg-sky-600 hover:bg-sky-700 text-white px-4 py-3 rounded-xl font-bold shadow-lg shadow-sky-600/20 transition">Save Changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BILLING DETAILS MODAL */}
+      {editingBilling && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md m-4">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Billing Details</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Update medical aid information for this patient.
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingBilling(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-600 mb-1.5">
+                  Medical Aid
+                </label>
+                <input
+                  type="text"
+                  value={editMedicalAid}
+                  onChange={(e) => setEditMedicalAid(e.target.value)}
+                  placeholder="e.g. Discovery"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-600 mb-1.5">
+                  Plan / Option
+                </label>
+                <input
+                  type="text"
+                  value={editMedicalAidPlan}
+                  onChange={(e) => setEditMedicalAidPlan(e.target.value)}
+                  placeholder="e.g. Classic Comprehensive"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-600 mb-1.5">
+                  Member Number
+                </label>
+                <input
+                  type="text"
+                  value={editMedicalAidNumber}
+                  onChange={(e) => setEditMedicalAidNumber(e.target.value)}
+                  placeholder="Member number"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setEditingBilling(false)}
+                  className="flex-1 px-4 py-3 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveBillingEdit}
+                  className="flex-1 bg-sky-600 hover:bg-sky-700 text-white px-4 py-3 rounded-xl font-bold shadow-lg shadow-sky-600/20 transition"
+                >
+                  Save Billing
+                </button>
               </div>
             </div>
           </div>

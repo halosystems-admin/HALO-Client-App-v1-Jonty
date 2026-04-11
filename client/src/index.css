@@ -27,38 +27,38 @@ body {
 
 .halo-calendar .fc {
   height: 100%;
-  --fc-border-color: #e3edf4;
-  --fc-neutral-bg-color: #f8fbfd;
+  --fc-border-color: #e7eff5;
+  --fc-neutral-bg-color: #f7fbfd;
   --fc-page-bg-color: #ffffff;
-  --fc-list-event-hover-bg-color: #f2f8fc;
+  --fc-list-event-hover-bg-color: #eef8fc;
   --fc-now-indicator-color: #ef4444;
 }
 
 .halo-calendar .fc-scrollgrid {
   border: none;
+  border-radius: 24px;
 }
 
 .halo-calendar .fc-theme-standard td,
 .halo-calendar .fc-theme-standard th {
-  border-color: #e6eff5;
+  border-color: #e8eff5;
 }
 
 .halo-calendar .fc-col-header-cell {
   background: #fbfdff;
-  padding: 10px 0;
+  padding: 12px 0;
 }
 
 .halo-calendar .fc-col-header-cell-cushion {
-  padding: 8px 10px;
-  color: #1e293b;
-  font-size: 0.9rem;
-  font-weight: 700;
+  width: 100%;
+  padding: 6px 8px;
+  text-decoration: none;
 }
 
 .halo-calendar .fc-timegrid-slot-label-cushion,
 .halo-calendar .fc-timegrid-axis-cushion {
   color: #64748b;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   padding: 0 10px;
 }
@@ -68,20 +68,20 @@ body {
 }
 
 .halo-calendar .fc-timegrid-slot {
-  height: 3.7rem;
+  height: 3.85rem;
 }
 
 .halo-calendar .fc-timegrid-now-indicator-line {
-  border-color: #f97316;
+  border-color: #e85d75;
 }
 
 .halo-calendar .fc-timegrid-now-indicator-arrow {
-  border-top-color: #f97316;
-  border-bottom-color: #f97316;
+  border-top-color: #e85d75;
+  border-bottom-color: #e85d75;
 }
 
 .halo-calendar .fc-day-today {
-  background: #fffdf2 !important;
+  background: #f4fbfe !important;
 }
 
 .halo-calendar .fc-daygrid-day-number,
@@ -91,16 +91,16 @@ body {
 
 .halo-calendar .fc-event {
   border: none;
-  border-radius: 14px;
-  box-shadow: 0 10px 24px -18px rgba(37, 99, 235, 0.65);
+  border-radius: 16px;
+  box-shadow: 0 16px 30px -24px rgba(15, 23, 42, 0.4);
   padding: 1px;
 }
 
 .halo-calendar .fc-event-main {
-  background: linear-gradient(180deg, #f8fdff 0%, #edf7fc 100%);
-  border: 1px solid #b6dff0;
-  border-radius: 13px;
-  padding: 4px 6px;
+  background: linear-gradient(180deg, #ffffff 0%, #eff8fc 100%);
+  border: 1px solid #bae0ee;
+  border-radius: 15px;
+  padding: 6px 8px;
 }
 
 .halo-calendar .fc-daygrid-event-dot {
@@ -115,17 +115,41 @@ body {
 .halo-calendar-event-inner {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 
 .halo-calendar .fc-highlight {
-  background: rgba(78, 169, 219, 0.15);
-  border-radius: 16px;
+  background: rgba(57, 169, 201, 0.14);
+  border-radius: 18px;
 }
 
 .halo-calendar .fc-popover {
   border-radius: 18px;
   border: 1px solid #dbe8f0;
   box-shadow: 0 20px 45px -32px rgba(15, 23, 42, 0.4);
+}
+
+.halo-calendar .fc-timegrid-col.fc-day-today,
+.halo-calendar .fc-daygrid-day.fc-day-today {
+  box-shadow: inset 0 0 0 1px rgba(57, 169, 201, 0.08);
+}
+
+.halo-calendar .fc-daygrid-day-frame {
+  padding: 4px;
+}
+
+.halo-calendar .fc-daygrid-day-number {
+  padding: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.halo-calendar .fc-timegrid-divider {
+  background: #f7fbfd;
+}
+
+.halo-calendar .fc-timegrid-slot-minor {
+  border-top-style: dotted;
 }

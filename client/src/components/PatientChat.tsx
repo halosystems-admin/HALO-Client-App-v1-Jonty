@@ -6,7 +6,6 @@ import {
   Mic,
   Paperclip,
   Send,
-  Sparkles,
   StopCircle,
   X,
 } from 'lucide-react';
@@ -14,7 +13,6 @@ import { renderInlineMarkdown } from '../utils/formatting';
 import { transcribeAudio } from '../services/api';
 
 interface PatientChatProps {
-  patientName: string;
   chatMessages: ChatMessage[];
   chatInput: string;
   onChatInputChange: React.Dispatch<React.SetStateAction<string>>;
@@ -71,7 +69,6 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export const PatientChat: React.FC<PatientChatProps> = ({
-  patientName,
   chatMessages,
   chatInput,
   onChatInputChange,
@@ -291,69 +288,17 @@ export const PatientChat: React.FC<PatientChatProps> = ({
   };
 
   return (
-    <div className="flex h-[calc(100vh-220px)] min-h-[640px] flex-col overflow-hidden rounded-[32px] border border-[#d8e7ef] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfd_100%)] shadow-sm">
-      <div className="border-b border-[#e6eff5] bg-white/90 px-6 py-4 backdrop-blur-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#eaf6fb] text-[#3294c7]">
-              <Bot size={20} />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#6ea7c4]">
-                Folder Scribe Agent
-              </p>
-              <h3 className="text-lg font-semibold text-slate-800">
-                Ask HALO about {patientName}
-              </h3>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+    <div className="flex h-full min-h-0 flex-col bg-[linear-gradient(180deg,#fbfdff_0%,#f5fbfe_100%)]">
+      <div className="flex-1 overflow-y-auto px-4 pb-6 pt-5 custom-scrollbar md:px-8">
+        {chatMessages.length === 0 && !chatLoading ? (
+          <div className="mx-auto flex h-full w-full max-w-5xl justify-end">
+            <div className="inline-flex h-fit items-center gap-2 rounded-full border border-[#d8e7ef] bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm backdrop-blur-sm">
               <span className="h-2 w-2 rounded-full bg-emerald-400" />
               Patient context live
             </div>
-            {draftAttachments.length > 0 && (
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
-                <Paperclip className="h-3.5 w-3.5 text-[#55a9d3]" />
-                {draftAttachments.length} attachment{draftAttachments.length === 1 ? '' : 's'} ready
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-6 py-6 custom-scrollbar">
-        {chatMessages.length === 0 && !chatLoading ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[28px] bg-[#ebf7fc] text-[#3494c8] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
-              <Sparkles size={28} />
-            </div>
-            <h3 className="text-2xl font-semibold tracking-tight text-slate-800">
-              Ask the Agent
-            </h3>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-              Ask about clinical notes, history, medications, investigations, or upload a supporting document and ask HALO to use it for the next answer.
-            </p>
-
-            <div className="mt-8 grid w-full max-w-3xl gap-3 md:grid-cols-2">
-              {STARTER_QUESTIONS.map((question) => (
-                <button
-                  key={question}
-                  type="button"
-                  onClick={() => {
-                    onChatInputChange(question);
-                    inputRef.current?.focus();
-                  }}
-                  className="rounded-3xl border border-[#d8e7ef] bg-white px-5 py-4 text-left text-sm font-medium text-slate-600 shadow-sm transition hover:border-[#a8d5ea] hover:bg-[#f4fbfe] hover:text-[#2f84b4]"
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
           </div>
         ) : (
-          <div className="mx-auto flex max-w-4xl flex-col gap-4">
+          <div className="mx-auto flex max-w-4xl flex-col gap-4 pb-4">
             {chatMessages.map((msg, idx) => {
               const isLastAssistantStreaming =
                 chatLoading &&
@@ -436,6 +381,30 @@ export const PatientChat: React.FC<PatientChatProps> = ({
 
       <div className="border-t border-[#e6eff5] bg-white/92 px-4 py-4 backdrop-blur-sm md:px-6">
         <div className="mx-auto flex max-w-4xl flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              Patient context live
+            </div>
+            {chatMessages.length === 0 && !chatLoading && (
+              <>
+                {STARTER_QUESTIONS.map((question) => (
+                  <button
+                    key={question}
+                    type="button"
+                    onClick={() => {
+                      onChatInputChange(question);
+                      inputRef.current?.focus();
+                    }}
+                    className="rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-[#a8d5ea] hover:bg-[#f4fbfe] hover:text-[#2f84b4]"
+                  >
+                    {question}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+
           {draftAttachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {draftAttachments.map((attachment, index) => (
@@ -520,7 +489,7 @@ export const PatientChat: React.FC<PatientChatProps> = ({
                   void handleSend();
                 }
               }}
-              placeholder={`Ask about ${patientName}, or upload a document and tell HALO what to look for...`}
+              placeholder="Ask about notes, history, medications, or upload a document and tell HALO what to look for..."
               className="min-h-[52px] flex-1 resize-none border-0 bg-transparent px-1 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400"
               disabled={chatLoading || isTranscribing}
             />
