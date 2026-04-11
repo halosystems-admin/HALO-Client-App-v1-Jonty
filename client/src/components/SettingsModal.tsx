@@ -469,7 +469,7 @@ export const SettingsModal: React.FC<Props> = ({
                 <div>
                   <p className="text-sm font-semibold text-slate-800">Evidence</p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Show the Evidence tab for structured clinical evidence search with sources.
+                    Show Evidence in the sidebar (under Admissions when enabled) for structured clinical evidence search with sources.
                   </p>
                 </div>
                 <button

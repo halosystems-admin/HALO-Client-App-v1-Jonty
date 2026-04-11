@@ -3,6 +3,7 @@ import type { Patient } from '../../../shared/types';
 import {
   Plus, LogOut, Search, Trash2, ChevronDown,
   Settings, Loader2, Calendar as CalendarIcon, Users, Clock, ChevronsLeft, ChevronsRight, LayoutPanelTop,
+  BookMarked,
 } from 'lucide-react';
 import { searchPatientsByConcept } from '../services/api';
 
@@ -16,11 +17,13 @@ interface SidebarProps {
   onLogout: () => void;
   onOpenSettings: () => void;
   userEmail?: string;
-  activeMainView?: 'workspace' | 'calendar' | 'admissions';
+  activeMainView?: 'workspace' | 'calendar' | 'admissions' | 'evidence';
   onOpenPatients?: () => void;
   onOpenCalendar?: () => void;
   admissionsEnabled?: boolean;
   onOpenAdmissions?: () => void;
+  evidenceEnabled?: boolean;
+  onOpenEvidence?: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -40,6 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenCalendar,
   admissionsEnabled = false,
   onOpenAdmissions,
+  evidenceEnabled = true,
+  onOpenEvidence,
   collapsed = false,
   onToggleCollapse,
 }) => {
@@ -51,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const patientsActive = activeMainView === 'workspace';
   const calendarActive = activeMainView === 'calendar';
   const admissionsActive = activeMainView === 'admissions';
+  const evidenceActive = activeMainView === 'evidence';
 
   // Local filter
   const localFiltered = patients.filter(
@@ -148,24 +154,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div
       className={`bg-white h-full flex flex-col border-r border-slate-200 shadow-sm transition-[width] duration-300 ${
-        collapsed ? 'w-[88px]' : 'w-64'
+        collapsed ? 'w-[100px]' : 'min-w-[288px] w-72'
       }`}
     >
-      {/* Logo */}
-      <div className={`relative border-b border-slate-100 ${collapsed ? 'px-3 py-4' : 'px-5 py-4'}`}>
-        <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
-          <div className="w-9 h-9 rounded-xl overflow-hidden shadow-sm shrink-0">
+      {/* Logo + collapse — collapsed mode uses vertical stack so the toggle never overlaps the logo */}
+      <div className={`border-b border-slate-100 ${collapsed ? 'px-3 py-3' : 'px-5 py-4'}`}>
+        <div
+          className={`flex ${collapsed ? 'flex-col items-center gap-2' : 'flex-row items-center gap-3'}`}
+        >
+          <div className="w-9 h-9 shrink-0 rounded-xl overflow-hidden shadow-sm">
             <img
               src="/halo-icon.png"
               alt="HALO"
-              className="w-full h-full object-cover"
+              className="h-full w-full object-cover"
               draggable={false}
             />
           </div>
           {!collapsed && (
-            <div>
-              <h1 className="font-bold text-slate-800 text-base leading-tight">HALO</h1>
-              <p className="text-[10px] text-cyan-600 font-semibold tracking-widest uppercase">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base font-bold leading-tight text-slate-800">HALO</h1>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-cyan-600">
                 Patient Drive
               </p>
             </div>
@@ -173,8 +181,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={onToggleCollapse}
-            className={`hidden md:inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${
-              collapsed ? 'absolute right-3 top-4' : 'ml-auto'
+            className={`hidden md:inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${
+              collapsed ? '' : 'ml-auto'
             }`}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -329,6 +337,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                     Board
                   </span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {evidenceEnabled && (
+          <div
+            className={`mb-1 ${admissionsEnabled && !collapsed ? 'ml-1 border-l-2 border-slate-100 pl-2' : ''}`}
+          >
+            <button
+              type="button"
+              onClick={() => onOpenEvidence?.()}
+              title="Evidence"
+              className={`w-full flex items-center rounded-xl text-sm font-medium transition-all ${
+                evidenceActive
+                  ? 'bg-cyan-50 text-cyan-700'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+              } ${collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}`}
+            >
+              <BookMarked size={17} className={evidenceActive ? 'text-cyan-600' : 'text-slate-400'} />
+              {!collapsed && (
+                <>
+                  <span className="flex-1 text-left">Evidence</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Clinical</span>
                 </>
               )}
             </button>

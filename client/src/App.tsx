@@ -11,6 +11,7 @@ import type { UploadHudState } from './components/UploadHud';
 import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, ScanLine, Loader2 } from 'lucide-react';
 import { CalendarPage } from './pages/CalendarPage';
 import { AdmissionsPage } from './pages/AdmissionsPage';
+import { EvidencePage } from './pages/EvidencePage';
 
 export const App = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -62,7 +63,9 @@ export const App = () => {
 
   // Calendar / bookings
   const [calendarPrepEvent, setCalendarPrepEvent] = useState<CalendarEvent | null>(null);
-  const [activeMainView, setActiveMainView] = useState<'workspace' | 'calendar' | 'admissions'>('workspace');
+  const [activeMainView, setActiveMainView] = useState<
+    'workspace' | 'calendar' | 'admissions' | 'evidence'
+  >('workspace');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('halo_sidebarCollapsed') === '1';
@@ -91,6 +94,12 @@ export const App = () => {
       setActiveMainView('workspace');
     }
   }, [activeMainView, userSettings?.modules?.admissions]);
+
+  useEffect(() => {
+    if (userSettings?.modules?.evidence === false && activeMainView === 'evidence') {
+      setActiveMainView('workspace');
+    }
+  }, [activeMainView, userSettings?.modules?.evidence]);
 
   // Persist selected patient to sessionStorage so it survives page refresh
   // Also track recently opened patients in localStorage
@@ -359,6 +368,7 @@ export const App = () => {
 
   const activePatient = patients.find(p => p.id === selectedPatientId);
   const admissionsEnabled = userSettings?.modules?.admissions ?? false;
+  const evidenceEnabled = userSettings?.modules?.evidence !== false;
   const hideSidebarOnMobile = activeMainView === 'workspace' && Boolean(selectedPatientId);
 
   return (
@@ -382,6 +392,8 @@ export const App = () => {
           onOpenCalendar={() => setActiveMainView('calendar')}
           admissionsEnabled={admissionsEnabled}
           onOpenAdmissions={() => setActiveMainView('admissions')}
+          evidenceEnabled={evidenceEnabled}
+          onOpenEvidence={() => setActiveMainView('evidence')}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         />
@@ -404,6 +416,8 @@ export const App = () => {
             onToast={showToast}
             onOpenPatient={(patientId, options) => openPatientWorkspace(patientId, options)}
           />
+        ) : activeMainView === 'evidence' && evidenceEnabled ? (
+          <EvidencePage patients={patients} onToast={showToast} />
         ) : activePatient ? (
           <PatientWorkspace
             key={activePatient.id}
@@ -422,7 +436,6 @@ export const App = () => {
                 ? calendarPrepEvent
                 : null
             }
-            evidenceEnabled={userSettings?.modules?.evidence !== false}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-300 relative overflow-hidden">

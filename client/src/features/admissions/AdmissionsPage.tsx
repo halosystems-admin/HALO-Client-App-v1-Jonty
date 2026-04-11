@@ -31,7 +31,7 @@ interface Props {
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   onOpenPatient: (
     patientId: string,
-    options?: { tab?: 'overview' | 'notes' | 'chat' | 'sessions' | 'evidence'; freshSession?: boolean }
+    options?: { tab?: 'overview' | 'notes' | 'chat' | 'sessions'; freshSession?: boolean }
   ) => void;
 }
 
@@ -40,6 +40,7 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onOpenPatie
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [boardSearch, setBoardSearch] = useState('');
+  const [doctorFilter, setDoctorFilter] = useState('');
   const [filterMode, setFilterMode] = useState<BoardFilterMode>('all');
   const [now, setNow] = useState(Date.now());
   const [renamingColumnId, setRenamingColumnId] = useState<string | null>(null);
@@ -90,10 +91,24 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onOpenPatie
       .slice(0, 12);
   }, [board?.columns, newCardSearch, patients]);
 
+  const coManagingDoctorOptions = useMemo(() => {
+    if (!board) return [];
+    const names = new Set<string>();
+    for (const col of board.columns) {
+      for (const card of col.cards) {
+        for (const d of card.coManagingDoctors) {
+          const t = d.trim();
+          if (t) names.add(t);
+        }
+      }
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [board]);
+
   const visibleBoard = useMemo(() => {
     if (!board) return null;
-    return buildVisibleBoard(board, boardSearch, filterMode, patientIdNumberLookup);
-  }, [board, boardSearch, filterMode, patientIdNumberLookup]);
+    return buildVisibleBoard(board, boardSearch, filterMode, doctorFilter, patientIdNumberLookup);
+  }, [board, boardSearch, filterMode, doctorFilter, patientIdNumberLookup]);
 
   useEffect(() => {
     let mounted = true;
@@ -429,6 +444,9 @@ export const AdmissionsPage: React.FC<Props> = ({ patients, onToast, onOpenPatie
         onBoardSearchChange={setBoardSearch}
         filterMode={filterMode}
         onFilterModeChange={setFilterMode}
+        doctorFilter={doctorFilter}
+        onDoctorFilterChange={setDoctorFilter}
+        coManagingDoctorOptions={coManagingDoctorOptions}
         saving={saving}
         updatedAt={board.updatedAt}
         onAddPatient={() => handleOpenAddPatient(board.columns[0]?.id || '')}

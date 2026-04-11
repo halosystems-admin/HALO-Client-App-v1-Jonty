@@ -61,11 +61,21 @@ function cardMatchesFilter(card: AdmissionsCard, mode: BoardFilterMode): boolean
   return true;
 }
 
+function cardMatchesDoctor(card: AdmissionsCard, doctorFilter: string): boolean {
+  const t = doctorFilter.trim().toLowerCase();
+  if (!t) return true;
+  return card.coManagingDoctors.some((d) => {
+    const x = d.trim().toLowerCase();
+    return x === t || x.includes(t);
+  });
+}
+
 /** Client-side search + ward filter (does not mutate source board). */
 export function buildVisibleBoard(
   board: AdmissionsBoard,
   query: string,
   filterMode: BoardFilterMode,
+  doctorFilter: string,
   patientIdNumberLookup: (patientId: string) => string | undefined
 ): AdmissionsBoard {
   const q = query.trim().toLowerCase();
@@ -75,6 +85,7 @@ export function buildVisibleBoard(
       ...column,
       cards: column.cards.filter((card) => {
         if (!cardMatchesFilter(card, filterMode)) return false;
+        if (!cardMatchesDoctor(card, doctorFilter)) return false;
         if (!q) return true;
         const idNum = patientIdNumberLookup(card.patientId) || '';
         const haystack = [

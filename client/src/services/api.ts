@@ -621,6 +621,8 @@ export const evidenceQuery = (params: {
   query: string;
   patientId?: string;
   patientName?: string;
+  /** Markdown from HALO patient summary when a patient is selected */
+  patientSummary?: string;
 }): Promise<EvidenceQueryResponse> =>
   request<EvidenceQueryResponse>('/api/evidence/query', {
     method: 'POST',

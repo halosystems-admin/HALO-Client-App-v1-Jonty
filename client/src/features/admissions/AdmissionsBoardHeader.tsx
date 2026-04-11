@@ -14,6 +14,9 @@ interface Props {
   onBoardSearchChange: (value: string) => void;
   filterMode: BoardFilterMode;
   onFilterModeChange: (mode: BoardFilterMode) => void;
+  doctorFilter: string;
+  onDoctorFilterChange: (value: string) => void;
+  coManagingDoctorOptions: string[];
   saving: boolean;
   updatedAt: string;
   onAddPatient: () => void;
@@ -24,6 +27,9 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
   onBoardSearchChange,
   filterMode,
   onFilterModeChange,
+  doctorFilter,
+  onDoctorFilterChange,
+  coManagingDoctorOptions,
   saving,
   updatedAt,
   onAddPatient,
@@ -43,8 +49,8 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto">
-          <label className="relative block min-w-0 lg:min-w-[260px]">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
+          <label className="relative block min-w-0 sm:min-w-[200px] lg:min-w-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
             <input
               value={boardSearch}
@@ -52,6 +58,23 @@ export const AdmissionsBoardHeader: React.FC<Props> = ({
               placeholder="Search patients, tags, doctors..."
               className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:bg-white"
             />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 sm:min-w-[200px]">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Co-managing doctor
+            </span>
+            <select
+              value={doctorFilter}
+              onChange={(e) => onDoctorFilterChange(e.target.value)}
+              className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 outline-none transition focus:border-cyan-300 focus:bg-white"
+            >
+              <option value="">All doctors</option>
+              {coManagingDoctorOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </label>
           <button
             type="button"

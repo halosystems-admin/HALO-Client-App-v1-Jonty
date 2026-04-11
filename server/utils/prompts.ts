@@ -53,15 +53,17 @@ User question: ${question}`;
 export function evidenceStructuredPrompt(
   question: string,
   patientContext: string,
-  patientName?: string
+  patientName?: string,
+  hasPatientId?: boolean
 ): string {
-  const hasPatient = Boolean(patientContext.trim());
+  const hasPatient =
+    typeof hasPatientId === 'boolean' ? hasPatientId : Boolean(patientContext.trim());
   return `You are HALO Evidence, a clinical decision-support assistant. The user asked a medical evidence question.
 
 Your task:
 1. Synthesize a careful, professional answer grounded in established medical knowledge.
 2. ${hasPatient ? `Use the patient context below to tailor "patientApplication" — how this applies to this specific patient. If context is insufficient, say so briefly in that section.` : 'There is NO patient attached. Omit the patientApplication field entirely from the JSON (or use null).'}
-3. List representative sources a clinician would recognise (guidelines, key trials, reviews, drug labelling, public health bodies). Use plausible titles and organisations; if you are uncertain about a specific citation, prefer general wording ("per major society guidelines") and lower source strength rather than inventing precise bibliographic data. Never fabricate DOIs or URLs — omit "url" unless you are highly confident a stable public URL exists.
+3. List representative sources a clinician would recognise (guidelines, key trials, reviews, drug labelling, public health bodies). Use plausible titles and organisations; if you are uncertain about a specific citation, prefer general wording ("per major society guidelines") and lower source strength rather than inventing precise bibliographic data. Include a real "url" only when you know a stable public link (e.g. official guideline PDF, PubMed PMID URL, regulator page). Never invent DOIs; if unsure, omit "url" and the app will still offer a PubMed search for the title.
 
 Clinical question:
 ${question}

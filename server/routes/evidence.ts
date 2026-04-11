@@ -25,6 +25,11 @@ function isValidSourceType(t: string): t is EvidenceSourceType {
   return SOURCE_TYPES.includes(t as EvidenceSourceType);
 }
 
+function pubmedSearchUrl(title: string, organizationOrJournal?: string, year?: string): string {
+  const q = [title, organizationOrJournal, year].filter(Boolean).join(' ');
+  return `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(q)}`;
+}
+
 async function buildPatientFolderContext(token: string, patientId: string): Promise<string> {
   const allFiles = await fetchAllFilesInFolder(token, patientId);
   const readableFiles = allFiles.filter(
@@ -107,7 +112,14 @@ function normalizeResponse(
         typeof s.organizationOrJournal === 'string' ? s.organizationOrJournal : undefined,
       year: typeof s.year === 'string' ? s.year : undefined,
       type,
-      url: typeof s.url === 'string' && s.url.startsWith('http') ? s.url : undefined,
+      url:
+        typeof s.url === 'string' && s.url.startsWith('http')
+          ? s.url
+          : pubmedSearchUrl(
+              typeof s.title === 'string' && s.title.trim() ? s.title : `Source ${id}`,
+              typeof s.organizationOrJournal === 'string' ? s.organizationOrJournal : undefined,
+              typeof s.year === 'string' ? s.year : undefined
+            ),
       relevanceNote: typeof s.relevanceNote === 'string' ? s.relevanceNote : undefined,
     };
   });
@@ -163,10 +175,12 @@ function emptyFallback(query: string, hasPatient: boolean): EvidenceQueryRespons
 // POST /query — structured clinical evidence answer
 router.post('/query', async (req: Request, res: Response) => {
   try {
-    const { query, patientId, patientName: bodyPatientName } = req.body as {
+    const { query, patientId, patientName: bodyPatientName, patientSummary } = req.body as {
       query?: string;
       patientId?: string;
       patientName?: string;
+      /** HALO patient-summary.md markdown from client when a patient is selected */
+      patientSummary?: string;
     };
 
     if (!query || typeof query !== 'string' || !query.trim()) {
@@ -177,20 +191,39 @@ router.post('/query', async (req: Request, res: Response) => {
     const trimmed = query.trim();
     const token = req.session.accessToken;
 
-    let patientContext = '';
-    const hasPatient = Boolean(patientId && typeof patientId === 'string' && token);
+    const hasPatientId = Boolean(patientId && typeof patientId === 'string');
+    const hasPatient = hasPatientId && Boolean(token);
 
+    const summaryText =
+      typeof patientSummary === 'string' && patientSummary.trim()
+        ? patientSummary.trim().slice(0, 12_000)
+        : '';
+
+    let folderContext = '';
     if (hasPatient && token && patientId) {
       try {
-        patientContext = await buildPatientFolderContext(token, patientId);
+        folderContext = await buildPatientFolderContext(token, patientId);
       } catch (e) {
         console.error('Evidence patient context error:', e);
-        patientContext = '';
+        folderContext = '';
       }
     }
 
+    let patientContext = '';
+    if (summaryText) {
+      patientContext += `HALO persistent patient summary (patient-summary.md):\n${summaryText}\n\n`;
+    }
+    if (folderContext) {
+      patientContext += folderContext;
+    }
+
     const patientName = typeof bodyPatientName === 'string' ? bodyPatientName : undefined;
-    const prompt = evidenceStructuredPrompt(trimmed, patientContext, patientName);
+    const prompt = evidenceStructuredPrompt(
+      trimmed,
+      patientContext,
+      patientName,
+      hasPatientId
+    );
 
     let text: string;
     try {
@@ -205,11 +238,11 @@ router.post('/query', async (req: Request, res: Response) => {
     const parseFailed = Object.keys(parsed).length === 0;
 
     if (parseFailed) {
-      res.json(emptyFallback(trimmed, hasPatient));
+      res.json(emptyFallback(trimmed, hasPatientId));
       return;
     }
 
-    const normalized = normalizeResponse(trimmed, parsed, hasPatient);
+    const normalized = normalizeResponse(trimmed, parsed, hasPatientId);
     res.json(normalized);
   } catch (err) {
     console.error('Evidence /query error:', err);

@@ -38,7 +38,6 @@ import { FileViewer } from '../components/FileViewer';
 import { FileBrowser } from '../components/FileBrowser';
 import { NoteEditor } from '../components/NoteEditor';
 import { PatientChat } from '../components/PatientChat';
-import { EvidencePanel } from '../features/evidence';
 import type { UploadHudState } from '../components/UploadHud';
 import { getErrorMessage } from '../utils/formatting';
 
@@ -46,7 +45,7 @@ const MAX_MAIN_COMPLAINT_LEN = 80;
 
 export interface WorkspaceNavigationIntent {
   id: string;
-  tab: 'overview' | 'notes' | 'chat' | 'sessions' | 'evidence';
+  tab: 'overview' | 'notes' | 'chat' | 'sessions';
   freshSession?: boolean;
 }
 
@@ -206,8 +205,6 @@ interface Props {
   calendarPrepEvent?: CalendarEvent | null;
   navigationIntent?: WorkspaceNavigationIntent | null;
   onNavigationIntentHandled?: (intentId: string) => void;
-  /** When false, Evidence tab is hidden (settings). Defaults to true. */
-  evidenceEnabled?: boolean;
 }
 
 export const PatientWorkspace: React.FC<Props> = ({
@@ -220,7 +217,6 @@ export const PatientWorkspace: React.FC<Props> = ({
   calendarPrepEvent,
   navigationIntent,
   onNavigationIntentHandled,
-  evidenceEnabled = true,
 }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [notes, setNotes] = useState<HaloNote[]>([]);
@@ -237,9 +233,7 @@ export const PatientWorkspace: React.FC<Props> = ({
   const [selectedTemplatesForGenerate, setSelectedTemplatesForGenerate] = useState<string[]>(['clinical_note']);
   const [templateSearch, setTemplateSearch] = useState('');
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
-  const [activeTab, setActiveTab] = useState<
-    'overview' | 'notes' | 'chat' | 'sessions' | 'evidence'
-  >('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'chat' | 'sessions'>('overview');
   const [savingNoteIndex, setSavingNoteIndex] = useState<number | null>(null);
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
   const [showCustomAiNoteModal, setShowCustomAiNoteModal] = useState(false);
@@ -1028,22 +1022,11 @@ export const PatientWorkspace: React.FC<Props> = ({
     if (navigationIntent.freshSession) {
       prepareFreshRecordingSession();
     } else {
-      const tab = navigationIntent.tab;
-      if (tab === 'evidence' && !evidenceEnabled) {
-        setActiveTab('overview');
-      } else {
-        setActiveTab(tab);
-      }
+      setActiveTab(navigationIntent.tab);
     }
 
     onNavigationIntentHandled?.(navigationIntent.id);
-  }, [navigationIntent, onNavigationIntentHandled, prepareFreshRecordingSession, evidenceEnabled]);
-
-  useEffect(() => {
-    if (!evidenceEnabled && activeTab === 'evidence') {
-      setActiveTab('overview');
-    }
-  }, [evidenceEnabled, activeTab]);
+  }, [navigationIntent, onNavigationIntentHandled, prepareFreshRecordingSession]);
 
   const handleLiveTranscriptUpdate = useCallback((segment: string) => {
     // While recording, keep the live segment separate so we can append it
@@ -1461,7 +1444,6 @@ export const PatientWorkspace: React.FC<Props> = ({
               { id: 'overview' as const, label: 'Folder' },
               { id: 'notes' as const, label: 'Scribe' },
               { id: 'chat' as const, label: 'Agent' },
-              ...(evidenceEnabled ? [{ id: 'evidence' as const, label: 'Evidence' }] : []),
               { id: 'sessions' as const, label: 'History' },
             ] as const
           ).map(tab => (
@@ -1484,7 +1466,7 @@ export const PatientWorkspace: React.FC<Props> = ({
       {/* Content */}
       <div
         className={`flex-1 ${
-          activeTab === 'chat' || activeTab === 'evidence'
+          activeTab === 'chat'
             ? 'overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5fbfe_100%)] px-0 py-0'
             : activeTab === 'notes'
               ? 'overflow-hidden bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fc_100%)] px-4 py-4 md:px-6 md:py-5'
@@ -1493,7 +1475,7 @@ export const PatientWorkspace: React.FC<Props> = ({
       >
         <div
           className={
-            activeTab === 'chat' || activeTab === 'evidence'
+            activeTab === 'chat'
               ? 'h-full'
               : activeTab === 'notes'
                 ? 'mx-auto h-full max-w-[1480px]'
@@ -1515,8 +1497,8 @@ export const PatientWorkspace: React.FC<Props> = ({
               onCreateFolder={() => setShowCreateFolderModal(true)}
             />
           ) : activeTab === 'sessions' ? (
-            <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-              <div className="min-h-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="grid h-full min-h-0 grid-cols-1 gap-6 overflow-x-hidden xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="min-h-0 min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -1602,8 +1584,8 @@ export const PatientWorkspace: React.FC<Props> = ({
                 )}
               </div>
 
-              <div className="min-h-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
                   <div>
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                       Consultations {sessions.length > 0 && `(${sessions.length})`}
@@ -1626,7 +1608,7 @@ export const PatientWorkspace: React.FC<Props> = ({
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                     {sessions.map(session => {
                       const createdDate = session.createdAt ? new Date(session.createdAt) : null;
                       const formattedDate = createdDate
@@ -2047,8 +2029,6 @@ export const PatientWorkspace: React.FC<Props> = ({
                 </div>
               )}
             </>
-          ) : activeTab === 'evidence' ? (
-            <EvidencePanel patient={patient} onToast={onToast} />
           ) : (
             <PatientChat
               chatMessages={chatMessages}

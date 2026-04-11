@@ -19,19 +19,6 @@ const tabs: { id: ResultTab; label: string }[] = [
 
 export const EvidenceResultShell: React.FC<Props> = ({ data, hasPatient }) => {
   const [activeTab, setActiveTab] = useState<ResultTab>('answer');
-  const [highlightId, setHighlightId] = useState<string | null>(null);
-
-  const handleCitation = (sourceId: string) => {
-    setActiveTab('links');
-    setHighlightId(sourceId);
-    window.requestAnimationFrame(() => {
-      document.getElementById(`evidence-source-${sourceId}`)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
-    });
-    window.setTimeout(() => setHighlightId(null), 2200);
-  };
 
   return (
     <div className="mt-6 motion-safe:animate-[evidenceFade_0.35s_ease-out]">
@@ -79,16 +66,12 @@ export const EvidenceResultShell: React.FC<Props> = ({ data, hasPatient }) => {
             id="evidence-panel-answer"
             aria-labelledby="evidence-tab-answer"
           >
-            <EvidenceAnswerTab
-              data={data}
-              hasPatient={hasPatient}
-              onCitationClick={handleCitation}
-            />
+            <EvidenceAnswerTab data={data} hasPatient={hasPatient} />
           </div>
         )}
         {activeTab === 'links' && (
           <div role="tabpanel" id="evidence-panel-links" aria-labelledby="evidence-tab-links">
-            <EvidenceLinksTab sources={data.sources} highlightId={highlightId} />
+            <EvidenceLinksTab sources={data.sources} highlightId={null} />
           </div>
         )}
         {activeTab === 'images' && (

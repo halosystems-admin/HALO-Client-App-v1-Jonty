@@ -30,7 +30,7 @@ interface Props {
   setDoctorInput: (v: string) => void;
   onOpenPatient: (
     patientId: string,
-    options?: { tab?: 'overview' | 'notes' | 'chat' | 'sessions' | 'evidence'; freshSession?: boolean }
+    options?: { tab?: 'overview' | 'notes' | 'chat' | 'sessions'; freshSession?: boolean }
   ) => void;
 }
 

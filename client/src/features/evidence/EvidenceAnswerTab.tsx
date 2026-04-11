@@ -1,11 +1,11 @@
 import React from 'react';
 import type { EvidenceQueryResponse } from '../../../../shared/types';
 import { SOURCE_TYPE_LABEL } from './evidenceConstants';
+import { resolveEvidenceSourceUrl } from './evidenceSourceUrl';
 
 interface Props {
   data: EvidenceQueryResponse;
   hasPatient: boolean;
-  onCitationClick: (sourceId: string) => void;
 }
 
 function SectionBlock({ title, children }: { title: string; children: React.ReactNode }) {
@@ -36,7 +36,7 @@ function paragraphize(text: string) {
   );
 }
 
-export const EvidenceAnswerTab: React.FC<Props> = ({ data, hasPatient, onCitationClick }) => {
+export const EvidenceAnswerTab: React.FC<Props> = ({ data, hasPatient }) => {
   const { sections, sources, answerSegments } = data;
   const sourceById = new Map(sources.map(s => [s.id, s]));
 
@@ -47,16 +47,18 @@ export const EvidenceAnswerTab: React.FC<Props> = ({ data, hasPatient, onCitatio
         {ids.map(id => {
           const src = sourceById.get(id);
           const label = src ? `${src.id}` : id;
+          const href = src ? resolveEvidenceSourceUrl(src) : `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(id)}`;
           return (
-            <button
+            <a
               key={id}
-              type="button"
-              onClick={() => onCitationClick(id)}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center rounded-md border border-[#c5e4f3] bg-[#f4fbfe] px-1.5 py-0.5 text-[11px] font-semibold text-[#1a6f94] transition hover:bg-[#eaf6fb]"
-              title={src?.title ? `View: ${src.title}` : 'View source'}
+              title={src?.title ? `Open source: ${src.title}` : 'Open source'}
             >
               [{label}]
-            </button>
+            </a>
           );
         })}
       </span>
@@ -109,13 +111,14 @@ export const EvidenceAnswerTab: React.FC<Props> = ({ data, hasPatient, onCitatio
           <span className="font-semibold text-slate-600">Sources in this answer: </span>
           {sources.map(s => (
             <span key={s.id} className="mr-2 inline">
-              <button
-                type="button"
+              <a
+                href={resolveEvidenceSourceUrl(s)}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-[#2f84b4] underline decoration-[#b8dff0] underline-offset-2 hover:text-[#236f9b]"
-                onClick={() => onCitationClick(s.id)}
               >
                 [{s.id}] {SOURCE_TYPE_LABEL[s.type]}
-              </button>
+              </a>
             </span>
           ))}
         </div>
