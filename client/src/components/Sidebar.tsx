@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Patient, CalendarEvent } from '../../../shared/types';
+import type { Patient } from '../../../shared/types';
 import {
-  Plus, LogOut, Search, Trash2, ChevronRight, ChevronDown,
+  Plus, LogOut, Search, Trash2, ChevronDown,
   Settings, Loader2, Calendar as CalendarIcon, Users, Clock,
 } from 'lucide-react';
 import { searchPatientsByConcept } from '../services/api';
-import { SidebarCalendar } from './SidebarCalendar';
 
 interface SidebarProps {
   patients: Patient[];
@@ -17,10 +16,9 @@ interface SidebarProps {
   onLogout: () => void;
   onOpenSettings: () => void;
   userEmail?: string;
-  calendarEvents?: CalendarEvent[];
-  calendarLoading?: boolean;
-  onSelectCalendarEvent?: (event: CalendarEvent) => void;
-  onOpenFullCalendar?: () => void;
+  activeMainView?: 'workspace' | 'calendar';
+  onOpenPatients?: () => void;
+  onOpenCalendar?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -33,18 +31,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   onOpenSettings,
   userEmail,
-  calendarEvents = [],
-  calendarLoading = false,
-  onSelectCalendarEvent,
-  onOpenFullCalendar,
+  activeMainView = 'workspace',
+  onOpenPatients,
+  onOpenCalendar,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [aiSearchResults, setAiSearchResults] = useState<string[] | null>(null);
   const [isAiSearching, setIsAiSearching] = useState(false);
-  const [activeSection, setActiveSection] = useState<'patients' | 'calendar'>('patients');
   const [patientsExpanded, setPatientsExpanded] = useState(true);
-  const [calendarExpanded, setCalendarExpanded] = useState(false);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const patientsActive = activeMainView === 'workspace';
+  const calendarActive = activeMainView === 'calendar';
 
   // Local filter
   const localFiltered = patients.filter(
@@ -55,7 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Debounced AI concept search
   useEffect(() => {
-    if (activeSection !== 'patients') return;
+    if (!patientsActive) return;
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     setAiSearchResults(null);
     if (!searchTerm.trim() || searchTerm.length < 3) return;
@@ -74,7 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return () => {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
-  }, [searchTerm, patients, activeSection]);
+  }, [searchTerm, patients, patientsActive]);
 
   const filteredPatients = searchTerm.trim()
     ? patients.filter(p => {
@@ -103,7 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       key={`${keyPrefix}-${patient.id}`}
       onClick={() => {
         onSelectPatient(patient.id);
-        setActiveSection('patients');
+        onOpenPatients?.();
       }}
       className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all mb-0.5 ${
         selectedPatientId === patient.id
@@ -170,18 +167,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="button"
             onClick={() => {
               setPatientsExpanded(v => !v);
-              setActiveSection('patients');
-              if (calendarExpanded) setCalendarExpanded(false);
+              onOpenPatients?.();
             }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeSection === 'patients'
+              patientsActive
                 ? 'bg-cyan-50 text-cyan-700'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
             }`}
           >
             <Users
               size={17}
-              className={activeSection === 'patients' ? 'text-cyan-600' : 'text-slate-400'}
+              className={patientsActive ? 'text-cyan-600' : 'text-slate-400'}
             />
             <span className="flex-1 text-left">Patients</span>
             <span className="text-[11px] text-slate-400 mr-1">{patients.length}</span>
@@ -191,7 +187,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             />
           </button>
 
-          {patientsExpanded && activeSection === 'patients' && (
+          {patientsExpanded && (
             <div className="mt-2 space-y-1 pl-1">
               {/* Search */}
               <div className="relative mb-3">
@@ -249,48 +245,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={() => {
-              const next = !calendarExpanded;
-              setCalendarExpanded(next);
-              setActiveSection('calendar');
-              if (next) setPatientsExpanded(false);
+              onOpenCalendar?.();
             }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeSection === 'calendar'
+              calendarActive
                 ? 'bg-cyan-50 text-cyan-700'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
             }`}
           >
             <CalendarIcon
               size={17}
-              className={activeSection === 'calendar' ? 'text-cyan-600' : 'text-slate-400'}
+              className={calendarActive ? 'text-cyan-600' : 'text-slate-400'}
             />
             <span className="flex-1 text-left">Calendar</span>
-            <ChevronDown
-              size={14}
-              className={`transition-transform text-slate-400 ${calendarExpanded ? 'rotate-180' : ''}`}
-            />
+            <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Week
+            </span>
           </button>
-
-          {calendarExpanded && activeSection === 'calendar' && (
-            <div className="mt-2 pl-1">
-              {onOpenFullCalendar && (
-                <button
-                  type="button"
-                  onClick={onOpenFullCalendar}
-                  className="w-full text-xs font-medium text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 flex items-center gap-2 transition-colors mb-2"
-                >
-                  <CalendarIcon size={12} />
-                  Open full calendar
-                </button>
-              )}
-              <SidebarCalendar
-                events={calendarEvents}
-                patients={patients}
-                loading={calendarLoading}
-                onSelectEvent={ev => onSelectCalendarEvent && onSelectCalendarEvent(ev)}
-              />
-            </div>
-          )}
         </div>
       </nav>
 

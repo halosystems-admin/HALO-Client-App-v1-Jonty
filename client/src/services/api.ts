@@ -2,6 +2,7 @@ import type {
   Patient,
   DriveFile,
   LabAlert,
+  ChatAttachment,
   ChatMessage,
   UserSettings,
   HaloNote,
@@ -499,11 +500,12 @@ export const searchPatientsByConcept = async (
 export const askHalo = async (
   patientId: string,
   question: string,
-  history: ChatMessage[]
+  history: ChatMessage[],
+  attachments?: ChatAttachment[]
 ): Promise<{ reply: string }> => {
   return request<{ reply: string }>('/api/ai/chat', {
     method: 'POST',
-    body: JSON.stringify({ patientId, question, history }),
+    body: JSON.stringify({ patientId, question, history, attachments }),
   });
 };
 
@@ -515,6 +517,7 @@ export const askHaloStream = async (
   patientId: string,
   question: string,
   history: ChatMessage[],
+  attachments: ChatAttachment[] | undefined,
   onChunk: (text: string) => void
 ): Promise<void> => {
   const controller = new AbortController();
@@ -525,7 +528,7 @@ export const askHaloStream = async (
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patientId, question, history }),
+      body: JSON.stringify({ patientId, question, history, attachments }),
       signal: controller.signal,
     });
 

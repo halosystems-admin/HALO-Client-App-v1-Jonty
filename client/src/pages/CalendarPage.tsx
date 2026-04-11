@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import type { CalendarEvent, DriveFile, Patient } from '../../../shared/types';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -6,10 +6,12 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import {
   Calendar as CalendarIcon,
-  Loader2,
-  Users,
+  ChevronLeft,
+  ChevronRight,
   Clock,
+  Loader2,
   Plus,
+  Users,
   X,
 } from 'lucide-react';
 import {
@@ -25,7 +27,7 @@ import {
 
 interface Props {
   patients: Patient[];
-  onSelectPatientFromEvent?: (patientId: string) => void;
+  onSelectPatientFromEvent?: (event: CalendarEvent) => void;
   onClose?: () => void;
 }
 
@@ -39,6 +41,14 @@ interface EventEditorState {
   patientId?: string;
 }
 
+type CalendarViewMode = 'timeGridDay' | 'timeGridWeek' | 'dayGridMonth';
+
+const VIEW_OPTIONS: Array<{ id: CalendarViewMode; label: string }> = [
+  { id: 'dayGridMonth', label: 'month' },
+  { id: 'timeGridWeek', label: 'week' },
+  { id: 'timeGridDay', label: 'day' },
+];
+
 const getBrowserTimeZone = () =>
   Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -50,6 +60,7 @@ export const CalendarPage: React.FC<Props> = ({
   onSelectPatientFromEvent,
   onClose,
 }) => {
+  const calendarRef = useRef<FullCalendar | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -57,6 +68,8 @@ export const CalendarPage: React.FC<Props> = ({
     start: string;
     end: string;
   } | null>(null);
+  const [currentView, setCurrentView] = useState<CalendarViewMode>('timeGridWeek');
+  const [currentTitle, setCurrentTitle] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorState, setEditorState] = useState<EventEditorState | null>(null);
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
@@ -78,7 +91,6 @@ export const CalendarPage: React.FC<Props> = ({
         setEvents(fetched);
         setCurrentRange({ start: startIso, end: endIso });
       } catch {
-        // Errors are surfaced via global toast layer in App; keep this silent here.
         setEvents([]);
       }
       setLoading(false);
@@ -93,9 +105,23 @@ export const CalendarPage: React.FC<Props> = ({
       if (startIso && endIso) {
         void loadEvents(startIso, endIso);
       }
+      setCurrentView(arg.view.type as CalendarViewMode);
+      setCurrentTitle(arg.view.title || '');
     },
     [loadEvents]
   );
+
+  const handleChangeView = useCallback((view: CalendarViewMode) => {
+    calendarRef.current?.getApi().changeView(view);
+  }, []);
+
+  const handleMoveCalendar = useCallback((direction: 'prev' | 'next' | 'today') => {
+    const api = calendarRef.current?.getApi();
+    if (!api) return;
+    if (direction === 'prev') api.prev();
+    if (direction === 'next') api.next();
+    if (direction === 'today') api.today();
+  }, []);
 
   const openCreateEditor = useCallback(
     (start: Date, end: Date) => {
@@ -159,7 +185,7 @@ export const CalendarPage: React.FC<Props> = ({
       }
       closeEditor();
     } catch {
-      // Errors are handled by global ApiError mechanism.
+      // Errors surface through global handling in App.
     }
     setSaving(false);
   };
@@ -172,7 +198,7 @@ export const CalendarPage: React.FC<Props> = ({
       setEvents((prev) => prev.filter((e) => e.id !== editorState.id));
       closeEditor();
     } catch {
-      // Silent; global handler will surface toasts if needed.
+      // Errors surface through global handling in App.
     }
     setSaving(false);
   };
@@ -186,13 +212,9 @@ export const CalendarPage: React.FC<Props> = ({
 
       if (!full) return;
 
-      if (onSelectPatientFromEvent && full.patientId) {
-        onSelectPatientFromEvent(full.patientId);
-      }
-
       openEditEditor(full);
     },
-    [events, onSelectPatientFromEvent, openEditEditor]
+    [events, openEditEditor]
   );
 
   const openAttachments = async () => {
@@ -253,7 +275,6 @@ export const CalendarPage: React.FC<Props> = ({
           prev.map((e) => (e.id === event.id ? event : e))
         );
       } catch {
-        // Revert visual change when API fails
         info.revert();
       }
     },
@@ -267,8 +288,9 @@ export const CalendarPage: React.FC<Props> = ({
         title: ev.title,
         start: ev.start,
         end: ev.end,
-        backgroundColor: ev.color || '#0ea5e9',
-        borderColor: ev.color || '#0284c7',
+        backgroundColor: ev.color || '#4ea9db',
+        borderColor: ev.color || '#3597cf',
+        classNames: ['halo-calendar-event'],
         extendedProps: {
           haloEvent: ev,
           patientName: findPatientName(patients, ev.patientId),
@@ -286,75 +308,134 @@ export const CalendarPage: React.FC<Props> = ({
       day: 'numeric',
       year: 'numeric',
     };
-    return `${start.toLocaleDateString(undefined, fmt)} – ${end.toLocaleDateString(
+    return `${start.toLocaleDateString(undefined, fmt)} - ${end.toLocaleDateString(
       undefined,
       fmt
     )}`;
   }, [currentRange]);
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-sky-100 flex items-center justify-center">
-            <CalendarIcon className="text-sky-600" size={18} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight">
-              Schedule
-            </h1>
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
-              Google Calendar &middot; {timeZone}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {loading && (
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <Loader2 className="w-4 h-4 animate-spin text-sky-500" />
-              <span>Refreshing events…</span>
+    <div className="halo-calendar-page flex h-full flex-col bg-[linear-gradient(180deg,#f7fbfd_0%,#eef7fb_100%)]">
+      <div className="border-b border-[#dceaf2] bg-white/90 backdrop-blur-sm">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-5 md:px-8">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e7f5fb] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+              <CalendarIcon className="text-[#3b9fcd]" size={22} />
             </div>
-          )}
-          {currentRangeLabel && (
-            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200">
-              <Clock className="w-3 h-3" />
-              <span>{currentRangeLabel}</span>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[#6ea7c4]">
+                Schedule
+              </p>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-800">
+                Google Calendar
+              </h1>
             </div>
-          )}
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-100 border border-slate-200 transition-colors"
-            >
-              <X className="w-3 h-3" />
-              Close
-            </button>
-          )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+              <Clock className="h-3.5 w-3.5 text-[#55a9d3]" />
+              {timeZone}
+            </div>
+            {currentRangeLabel && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-[#f8fcfe] px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+                <Users className="h-3.5 w-3.5 text-[#55a9d3]" />
+                {currentRangeLabel}
+              </div>
+            )}
+            {loading && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#55a9d3]" />
+                Refreshing
+              </div>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#d8e7ef] bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+              >
+                <X className="h-3.5 w-3.5" />
+                Close
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 bg-slate-50">
-        <div className="max-w-6xl mx-auto h-full px-4 py-4 md:px-6 md:py-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 h-full flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                <Users className="w-3.5 h-3.5 text-sky-500" />
-                <span>Day / Week / Month</span>
+      <div className="flex-1 overflow-hidden px-4 py-4 md:px-6 md:py-6">
+        <div className="mx-auto flex h-full max-w-[1440px] flex-col overflow-hidden rounded-[30px] border border-[#dbe9f1] bg-white shadow-[0_24px_60px_-35px_rgba(15,23,42,0.35)]">
+          <div className="border-b border-[#e6eff5] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfd_100%)] px-4 py-4 md:px-6">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-col gap-2">
+                <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[#eef8fc] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#67a7c7]">
+                  <Users className="h-3.5 w-3.5" />
+                  Day / Week / Month
+                </div>
+                <div>
+                  <h2 className="text-3xl font-semibold tracking-tight text-slate-800">
+                    {currentTitle || 'Schedule'}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Drag to move, resize to extend, and click any booking to edit it.
+                  </p>
+                </div>
               </div>
-              <span className="text-[11px] text-slate-400">
-                Drag to move &middot; Click to edit
-              </span>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                <div className="inline-flex items-center rounded-2xl border border-[#d7e6ef] bg-white p-1 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => handleMoveCalendar('prev')}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-[#eff8fc] hover:text-[#3794c6]"
+                    aria-label="Previous period"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMoveCalendar('next')}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-[#eff8fc] hover:text-[#3794c6]"
+                    aria-label="Next period"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMoveCalendar('today')}
+                    className="ml-1 inline-flex h-10 items-center justify-center rounded-xl bg-[#344a5f] px-4 text-sm font-semibold text-white transition hover:bg-[#25384b]"
+                  >
+                    Today
+                  </button>
+                </div>
+
+                <div className="inline-flex items-center rounded-2xl border border-[#d7e6ef] bg-[#f8fbfd] p-1 shadow-sm">
+                  {VIEW_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => handleChangeView(option.id)}
+                      className={`inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold capitalize transition ${
+                        currentView === option.id
+                          ? 'bg-[#344a5f] text-white shadow-sm'
+                          : 'text-slate-500 hover:bg-white hover:text-[#3794c6]'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="flex-1">
+          </div>
+
+          <div className="flex-1 overflow-hidden bg-[#f7fbfd] p-2 md:p-4">
+            <div className="h-full overflow-hidden rounded-[24px] border border-[#dce9f1] bg-white">
               <FullCalendar
+                ref={calendarRef}
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
-                headerToolbar={{
-                  left: 'prev,next today',
-                  center: 'title',
-                  right: 'dayGridMonth,timeGridWeek,timeGridDay',
-                }}
+                headerToolbar={false}
                 height="100%"
                 events={fcEvents}
                 selectable
@@ -362,15 +443,48 @@ export const CalendarPage: React.FC<Props> = ({
                 editable
                 eventResizableFromStart
                 slotMinTime="06:00:00"
-                slotMaxTime="22:00:00"
+                slotMaxTime="20:00:00"
                 weekends
                 nowIndicator
+                stickyHeaderDates
+                allDaySlot
+                expandRows
                 firstDay={1}
+                dayHeaderFormat={{
+                  weekday: 'short',
+                  month: 'numeric',
+                  day: 'numeric',
+                }}
+                slotLabelFormat={{
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  meridiem: 'short',
+                }}
+                eventTimeFormat={{
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  meridiem: 'short',
+                }}
                 datesSet={handleDatesSet}
                 select={(arg) => openCreateEditor(arg.start, arg.end)}
                 eventClick={handleEventClick}
                 eventDrop={handleEventDropOrResize}
                 eventResize={handleEventDropOrResize}
+                eventContent={(arg) => {
+                  const patientName = arg.event.extendedProps?.patientName as string | undefined;
+                  return (
+                    <div className="halo-calendar-event-inner">
+                      <div className="truncate text-[11px] font-semibold text-slate-800">
+                        {arg.timeText ? `${arg.timeText} - ${arg.event.title}` : arg.event.title}
+                      </div>
+                      {patientName && (
+                        <div className="truncate text-[10px] text-slate-500">
+                          {patientName}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }}
               />
             </div>
           </div>
@@ -419,7 +533,7 @@ export const CalendarPage: React.FC<Props> = ({
                     )
                   }
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-400"
-                  placeholder="e.g. Sarah Connor – follow-up"
+                  placeholder="e.g. Sarah Connor - follow-up"
                   autoFocus
                 />
               </div>
@@ -509,7 +623,7 @@ export const CalendarPage: React.FC<Props> = ({
                   }
                   rows={3}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-400 resize-none"
-                  placeholder="Internal notes for this booking…"
+                  placeholder="Internal notes for this booking..."
                 />
               </div>
               {editorState.patientId && (
@@ -558,14 +672,33 @@ export const CalendarPage: React.FC<Props> = ({
             </div>
             <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between gap-3 bg-slate-50/70">
               {editorState.id ? (
-                <button
-                  type="button"
-                  onClick={handleDeleteFromEditor}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 px-3 py-2 rounded-lg hover:bg-rose-50 transition-colors"
-                  disabled={saving}
-                >
-                  Delete booking
-                </button>
+                <div className="flex items-center gap-2">
+                  {onSelectPatientFromEvent &&
+                    editorState.patientId &&
+                    events.find((event) => event.id === editorState.id) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const linkedEvent = events.find((event) => event.id === editorState.id);
+                          if (!linkedEvent) return;
+                          onSelectPatientFromEvent(linkedEvent);
+                          closeEditor();
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-sky-600 transition-colors hover:bg-sky-50 hover:text-sky-700"
+                        disabled={saving}
+                      >
+                        Open patient workspace
+                      </button>
+                    )}
+                  <button
+                    type="button"
+                    onClick={handleDeleteFromEditor}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 px-3 py-2 rounded-lg hover:bg-rose-50 transition-colors"
+                    disabled={saving}
+                  >
+                    Delete booking
+                  </button>
+                </div>
               ) : (
                 <span className="text-[11px] text-slate-400 flex items-center gap-1">
                   <Plus className="w-3 h-3" />
@@ -590,7 +723,7 @@ export const CalendarPage: React.FC<Props> = ({
                   {saving ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Saving…
+                      Saving...
                     </>
                   ) : (
                     <>
@@ -630,7 +763,7 @@ export const CalendarPage: React.FC<Props> = ({
               {attachmentLoading ? (
                 <div className="flex items-center justify-center py-8 text-slate-500 gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-sky-500" />
-                  <span className="text-sm">Loading patient files…</span>
+                  <span className="text-sm">Loading patient files...</span>
                 </div>
               ) : attachmentFiles.length === 0 ? (
                 <p className="text-sm text-slate-500">
@@ -687,7 +820,7 @@ export const CalendarPage: React.FC<Props> = ({
                   {attachmentLoading ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Saving…
+                      Saving...
                     </>
                   ) : (
                     <>
@@ -704,4 +837,3 @@ export const CalendarPage: React.FC<Props> = ({
     </div>
   );
 };
-

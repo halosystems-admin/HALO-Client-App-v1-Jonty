@@ -27,11 +27,11 @@ const FileSkeleton: React.FC = () => (
   <div className="space-y-3">
     <div className="flex items-center justify-center gap-2 py-4 text-slate-500">
       <div className="h-5 w-5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
-      <span className="text-sm font-medium">Loading files…</span>
+      <span className="text-sm font-medium">Loading files...</span>
     </div>
     {[1, 2, 3].map((i) => (
-      <div key={i} className="flex items-center p-4 bg-white border border-slate-200 rounded-xl animate-pulse">
-        <div className="w-11 h-11 bg-slate-200 rounded-lg mr-4" />
+      <div key={i} className="flex items-center p-3 bg-white border border-slate-200 rounded-2xl animate-pulse">
+        <div className="w-10 h-10 bg-slate-200 rounded-2xl mr-3" />
         <div className="flex-1 space-y-2">
           <div className="h-4 bg-slate-200 rounded w-2/3" />
           <div className="h-3 bg-slate-100 rounded w-1/3" />
@@ -98,7 +98,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         </div>
         <button
           onClick={onCreateFolder}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors"
+          className="inline-flex h-10 items-center gap-1.5 rounded-2xl border border-[#cfe3ef] bg-white px-3.5 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b]"
         >
           <FolderPlus size={15} /> New Folder
         </button>
@@ -135,25 +135,25 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                 {folders.map(folder => (
                   <div
                     key={folder.id}
-                    className="group flex items-center p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md hover:border-sky-200 transition-all duration-200 cursor-pointer"
+                    className="group flex items-center rounded-2xl border border-slate-200 bg-white px-3.5 py-3 hover:border-sky-200 hover:bg-sky-50/40 transition-all duration-200 cursor-pointer"
                     onClick={() => onNavigateToFolder(folder)}
                   >
-                    <div className="p-3 rounded-lg mr-4 bg-sky-100 text-sky-600">
-                      <FolderOpen className="w-5 h-5" />
+                    <div className="mr-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+                      <FolderOpen className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-slate-800 group-hover:text-sky-700 transition-colors truncate">{folder.name}</h4>
-                      <p className="text-xs text-slate-500 mt-1">Folder &bull; {folder.createdTime}</p>
+                      <h4 className="text-sm font-semibold text-slate-800 group-hover:text-sky-700 transition-colors truncate">{folder.name}</h4>
+                      <p className="mt-0.5 text-[11px] text-slate-500">Folder - {folder.createdTime}</p>
                     </div>
                     <div className="flex items-center gap-1">
                       <button
                         onClick={(e) => { e.stopPropagation(); onStartEditFile(folder); }}
-                        className="p-2 text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                        className="rounded-xl p-2 text-slate-400 opacity-0 transition-colors hover:bg-white hover:text-sky-600 group-hover:opacity-100"
                         title="Rename"
                       >
-                        <Pencil size={16} />
+                        <Pencil size={15} />
                       </button>
-                      <ChevronRight size={18} className="text-slate-300 group-hover:text-sky-500 transition-colors" />
+                      <ChevronRight size={17} className="text-slate-300 group-hover:text-sky-500 transition-colors" />
                     </div>
                   </div>
                 ))}
@@ -180,26 +180,26 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                     : isPdf ? FileText
                     : File;
                   return (
-                    <div key={file.id} className="group flex items-center p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md hover:border-sky-200 transition-all duration-200">
-                      <div className={`p-3 rounded-lg mr-4 ${iconClass}`}>
-                        <IconComponent className="w-5 h-5" />
+                    <div key={file.id} className="group flex items-center rounded-2xl border border-slate-200 bg-white px-3.5 py-3 hover:border-sky-200 hover:bg-sky-50/40 transition-all duration-200">
+                      <div className={`mr-3 flex h-10 w-10 items-center justify-center rounded-2xl ${iconClass}`}>
+                        <IconComponent className="w-4 h-4" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-semibold text-slate-800 group-hover:text-sky-700 transition-colors truncate">{file.name}</h4>
-                        <p className="text-xs text-slate-500 mt-1 truncate">{file.createdTime} &bull; {getFriendlyFileType(file.mimeType)}</p>
+                        <h4 className="text-sm font-semibold text-slate-800 group-hover:text-sky-700 transition-colors truncate">{file.name}</h4>
+                        <p className="mt-0.5 truncate text-[11px] text-slate-500">{file.createdTime} - {getFriendlyFileType(file.mimeType)}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => onStartEditFile(file)} className="p-2 text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Rename">
-                          <Pencil size={16} />
+                        <button onClick={() => onStartEditFile(file)} className="rounded-xl p-2 text-slate-400 opacity-0 transition-colors hover:bg-white hover:text-sky-600 group-hover:opacity-100" title="Rename">
+                          <Pencil size={15} />
                         </button>
-                        <button onClick={() => onDeleteFile(file)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Delete">
-                          <Trash2 size={16} />
+                        <button onClick={() => onDeleteFile(file)} className="rounded-xl p-2 text-slate-400 opacity-0 transition-colors hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100" title="Delete">
+                          <Trash2 size={15} />
                         </button>
-                        <button onClick={() => onViewFile(file)} className="hidden sm:flex items-center gap-1.5 text-sm bg-slate-50 text-slate-600 px-3 py-1.5 rounded-md font-medium hover:bg-sky-50 hover:text-sky-700 transition-colors" title="Preview">
+                        <button onClick={() => onViewFile(file)} className="hidden sm:flex h-9 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700" title="Preview">
                           <Eye size={14} /> View
                         </button>
-                        <a href={file.url} target="_blank" rel="noreferrer" className="p-2 text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Open in new tab">
-                          <ExternalLink size={16} />
+                        <a href={file.url} target="_blank" rel="noreferrer" className="rounded-xl p-2 text-slate-400 opacity-0 transition-colors hover:bg-white hover:text-sky-600 group-hover:opacity-100" title="Open in new tab">
+                          <ExternalLink size={15} />
                         </a>
                       </div>
                     </div>

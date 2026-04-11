@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/requireAuth';
 import { generateText, generateTextStream, analyzeImage, transcribeAudio, safeJsonParse } from '../services/gemini';
 import { isDeepgramAvailable, transcribeWithDeepgram } from '../services/deepgram';
-import { fetchAllFilesInFolder, extractTextFromFile } from '../services/drive';
+import { fetchAllFilesInFolder, extractTextFromBuffer, extractTextFromFile } from '../services/drive';
 import {
   summaryPrompt,
   labAlertsPrompt,
@@ -13,9 +13,60 @@ import {
   fileDescriptionPrompt,
   patientStickerExtractionPrompt,
 } from '../utils/prompts';
+import type { ChatAttachment } from '../../shared/types';
 
 const router = Router();
 router.use(requireAuth);
+
+const MAX_CHAT_ATTACHMENTS = 3;
+
+function isSupportedAttachmentFile(name: string, mimeType: string): boolean {
+  const lowerName = name.toLowerCase();
+  const lowerMime = mimeType.toLowerCase();
+  return (
+    lowerMime === 'text/plain' ||
+    lowerMime === 'application/pdf' ||
+    lowerMime === 'application/msword' ||
+    lowerMime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    lowerName.endsWith('.txt') ||
+    lowerName.endsWith('.pdf') ||
+    lowerName.endsWith('.doc') ||
+    lowerName.endsWith('.docx')
+  );
+}
+
+async function buildAttachmentContext(attachments: ChatAttachment[] = []): Promise<string> {
+  const accepted = attachments
+    .filter((attachment) =>
+      attachment?.base64Data &&
+      attachment?.name &&
+      isSupportedAttachmentFile(attachment.name, attachment.mimeType || '')
+    )
+    .slice(0, MAX_CHAT_ATTACHMENTS);
+
+  if (accepted.length === 0) return '';
+
+  const parts: string[] = [];
+  for (const attachment of accepted) {
+    try {
+      const buffer = Buffer.from(attachment.base64Data, 'base64');
+      const extracted = await extractTextFromBuffer(
+        { name: attachment.name, mimeType: attachment.mimeType || 'application/octet-stream' },
+        buffer,
+        2500
+      );
+
+      if (extracted.trim()) {
+        parts.push(`--- Attachment: ${attachment.name} ---\n${extracted}`);
+      }
+    } catch (err) {
+      console.error('Attachment context extraction error:', err);
+    }
+  }
+
+  if (parts.length === 0) return '';
+  return `Transient attachments for this question:\n${parts.join('\n\n')}`;
+}
 
 // POST /summary — enhanced: reads actual file content (PDF, DOCX, TXT, Google Docs)
 router.post('/summary', async (req: Request, res: Response) => {
@@ -229,7 +280,8 @@ async function buildChatContext(
   token: string,
   patientId: string,
   question: string,
-  history: Array<{ role: string; content: string }>
+  history: Array<{ role: string; content: string }>,
+  attachments: ChatAttachment[] = []
 ): Promise<string> {
   const allFiles = await fetchAllFilesInFolder(token, patientId);
   const readableFiles = allFiles.filter(f =>
@@ -258,6 +310,11 @@ async function buildChatContext(
     }
   }
 
+  const attachmentContext = await buildAttachmentContext(attachments);
+  if (attachmentContext) {
+    contextParts.push(`\n${attachmentContext}`);
+  }
+
   const fullContext = contextParts.join('\n').substring(0, 15000);
   const conversationHistory = (history || [])
     .slice(-10)
@@ -270,10 +327,11 @@ async function buildChatContext(
 // POST /chat-stream - HALO medical chatbot (streaming SSE)
 router.post('/chat-stream', async (req: Request, res: Response) => {
   try {
-    const { patientId, question, history } = req.body as {
+    const { patientId, question, history, attachments } = req.body as {
       patientId?: string;
       question?: string;
       history?: Array<{ role: string; content: string }>;
+      attachments?: ChatAttachment[];
     };
 
     if (!patientId || !question || typeof question !== 'string') {
@@ -282,7 +340,7 @@ router.post('/chat-stream', async (req: Request, res: Response) => {
     }
 
     const token = req.session.accessToken!;
-    const prompt = await buildChatContext(token, patientId, question, history || []);
+    const prompt = await buildChatContext(token, patientId, question, history || [], attachments || []);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -310,10 +368,11 @@ router.post('/chat-stream', async (req: Request, res: Response) => {
 // POST /chat - HALO medical chatbot (non-streaming fallback)
 router.post('/chat', async (req: Request, res: Response) => {
   try {
-    const { patientId, question, history } = req.body as {
+    const { patientId, question, history, attachments } = req.body as {
       patientId?: string;
       question?: string;
       history?: Array<{ role: string; content: string }>;
+      attachments?: ChatAttachment[];
     };
 
     if (!patientId || !question || typeof question !== 'string') {
@@ -322,7 +381,7 @@ router.post('/chat', async (req: Request, res: Response) => {
     }
 
     const token = req.session.accessToken!;
-    const prompt = await buildChatContext(token, patientId, question, history || []);
+    const prompt = await buildChatContext(token, patientId, question, history || [], attachments || []);
     const reply = await generateText(prompt);
     res.json({ reply });
   } catch (err) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Patient, DriveFile, LabAlert, BreadcrumbItem, ChatMessage, HaloNote, NoteField, CalendarEvent, ScribeSession } from '../../../shared/types';
+import type { Patient, DriveFile, BreadcrumbItem, ChatAttachment, ChatMessage, HaloNote, NoteField, CalendarEvent, ScribeSession } from '../../../shared/types';
 import { AppStatus, FOLDER_MIME_TYPE } from '../../../shared/types';
 
 import {
@@ -11,9 +11,7 @@ import {
   uploadFile,
   updatePatient,
   updateFileMetadata,
-  generatePatientSummary,
   analyzeAndRenameImage,
-  extractLabAlerts,
   deleteFile,
   createFolder,
   askHaloStream,
@@ -33,8 +31,6 @@ import {
   FolderPlus, ChevronRight, ExternalLink, FileText, Layers, Plus,
   History,
 } from 'lucide-react';
-import { SmartSummary } from '../features/smart-summary/SmartSummary';
-import { LabAlerts } from '../features/lab-alerts/LabAlerts';
 import { HeaderConsultationRecorder } from '../features/scribe/HeaderConsultationRecorder';
 import { FileViewer } from '../components/FileViewer';
 import { FileBrowser } from '../components/FileBrowser';
@@ -130,8 +126,6 @@ interface Props {
 
 export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChange, onToast, templateId: propTemplateId, calendarPrepEvent }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
-  const [summary, setSummary] = useState<string[]>([]);
-  const [alerts, setAlerts] = useState<LabAlert[]>([]);
   const [notes, setNotes] = useState<HaloNote[]>([]);
   const [activeNoteIndex, setActiveNoteIndex] = useState(0);
   const [templateId, setTemplateId] = useState(propTemplateId || 'clinical_note');
@@ -151,8 +145,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   const [savingNoteIndex, setSavingNoteIndex] = useState<number | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [showAiPanel, setShowAiPanel] = useState(true);
-  const [aiLoading, setAiLoading] = useState(false);
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
   const [showCustomAiNoteModal, setShowCustomAiNoteModal] = useState(false);
   const [customAiPrompt, setCustomAiPrompt] = useState('');
@@ -259,15 +251,13 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     };
   }, []);
 
-  // Initial load + AI summary (only at root patient folder)
+  // Initial load for the current patient folder
   useEffect(() => {
     let isMounted = true;
 
     const loadData = async () => {
       setStatus(AppStatus.LOADING);
       setFiles([]);
-      setSummary([]);
-      setAlerts([]);
       setChatMessages([]);
       setChatInput("");
       setUploadMessage(null);
@@ -673,14 +663,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       const templateIds = selectedTemplatesForGenerate;
       const templateNames = Object.fromEntries(templateOptions.map(t => [t.id, t.name]));
 
-      // Enrich transcript with patient summary context if available
-      const summaryContext = summary.length > 0
-        ? `\n\n[Patient Summary]\n${summary.map(s => `• ${s}`).join('\n')}`
-        : '';
-      const enrichedTranscript = summaryContext
-        ? `${trimmedTranscript}${summaryContext}`
-        : trimmedTranscript;
-
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Note generation is taking too long. Please try again.')), GENERATE_TIMEOUT_MS)
       );
@@ -690,7 +672,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             templateIds.map(id =>
               generateNotePreview({
                 template_id: id,
-                text: enrichedTranscript,
+                text: trimmedTranscript,
                 user_id: getHaloUserForTemplate(id),
               })
             )
@@ -709,7 +691,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
                   .join('\n\n')
               : '';
           const content =
-            first?.content?.trim() || fromFields || enrichedTranscript;
+            first?.content?.trim() || fromFields || trimmedTranscript;
           return {
             noteId: first?.noteId ?? `note-${tid}-${Date.now()}`,
             title: first?.title ?? name,
@@ -773,27 +755,21 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       patient.id,
       selectedTemplatesForGenerate,
       templateOptions,
-      summary,
     ]
   );
 
-  const handleScribeResult = useCallback(
-    (transcript: string) => {
-      const clean = transcript.trim();
-      if (!clean) {
-        onToast('No speech detected.', 'info');
-        return;
-      }
-      const base = lastTranscript.trim();
-      const combined = base ? `${base}\n\n${clean}` : clean;
-      setLastTranscript(combined);
-      setLiveTranscriptSegment('');
-      setPendingTranscript(combined);
-      setSelectedTemplatesForGenerate(['clinical_note']);
-      setActiveTab('notes');
-    },
-    [lastTranscript, onToast]
-  );
+  const prepareFreshRecordingSession = useCallback(() => {
+    setActiveSessionId(null);
+    setLastTranscript('');
+    setLiveTranscriptSegment('');
+    setPendingTranscript(null);
+    setShowAddNoteModal(false);
+    setConsultContext('');
+    setNotes([]);
+    setConsultSubTab('transcript');
+    setDidCopyTranscript(false);
+    setActiveTab('notes');
+  }, []);
 
   const handleLiveTranscriptUpdate = useCallback((segment: string) => {
     // While recording, keep the live segment separate so we can append it
@@ -878,7 +854,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
   }, [notes.length]);
 
   // Chat handler — uses streaming for progressive response display
-  const handleSendChat = async () => {
+  const handleSendChat = async (attachments: ChatAttachment[] = []) => {
     const question = chatInput.trim();
     if (!question || chatLoading) return;
 
@@ -899,6 +875,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
         patient.id,
         question,
         chatMessagesRef.current,
+        attachments,
         (chunk) => {
           setChatMessages(prev => {
             const last = prev[prev.length - 1];
@@ -1034,39 +1011,6 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
     }
   };
 
-  const hasAiContent = alerts.length > 0 || summary.length > 0;
-
-  const handleGenerateAiInsights = useCallback(async () => {
-    if (aiLoading) return;
-    if (!files.length) {
-      onToast('No patient files available to analyze yet.', 'info');
-      return;
-    }
-    setAiLoading(true);
-    try {
-      const currentFiles = [...files];
-      const summaryResult = await generatePatientSummary(patient.name, currentFiles, patient.id);
-      setSummary(summaryResult);
-
-      const labFiles = currentFiles.filter(f =>
-        f.name.toLowerCase().includes('lab') ||
-        f.name.toLowerCase().includes('blood') ||
-        f.name.toLowerCase().includes('result')
-      );
-      if (labFiles.length > 0) {
-        const labContext = labFiles.map(f => f.name).join(', ');
-        const alertsResult = await extractLabAlerts(`Patient files indicate lab results: ${labContext}`);
-        setAlerts(alertsResult);
-      } else {
-        setAlerts([]);
-      }
-      setShowAiPanel(true);
-    } catch (err) {
-      onToast(getErrorMessage(err), 'error');
-    }
-    setAiLoading(false);
-  }, [aiLoading, files, patient.name, patient.id, onToast]);
-
   const handleCopyTranscript = useCallback(() => {
     const text = currentTranscript.trim();
     if (!text) return;
@@ -1087,17 +1031,8 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
 
   const handleLoadSession = useCallback(
     (session: ScribeSession | null) => {
-      // When selecting "Start new session" or clearing, reset to a blank editor state.
       if (!session) {
-        setActiveSessionId(null);
-        setLastTranscript('');
-        setLiveTranscriptSegment('');
-        setPendingTranscript(null);
-        setShowAddNoteModal(false);
-        setConsultContext('');
-        setNotes([]);
-        setConsultSubTab('transcript');
-        setActiveTab('notes');
+        prepareFreshRecordingSession();
         return;
       }
 
@@ -1109,6 +1044,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
       setPendingTranscript(null);
       setShowAddNoteModal(false);
       setConsultContext(session.context || '');
+      setDidCopyTranscript(false);
 
       if (Array.isArray(session.templates) && session.templates.length > 0) {
         setSelectedTemplatesForGenerate(session.templates);
@@ -1135,7 +1071,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
 
       setActiveTab('notes');
     },
-    []
+    [prepareFreshRecordingSession]
   );
 
   useEffect(() => {
@@ -1201,13 +1137,14 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
             <>
               <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
                 <HeaderConsultationRecorder
+                  onBeforeStart={prepareFreshRecordingSession}
                   onLiveTranscriptUpdate={handleLiveTranscriptUpdate}
                   onLiveStopped={handleLiveStopped}
                   onError={(msg: string) => onToast(msg, 'error')}
                 />
                 <button
                   onClick={openUploadPicker}
-                  className="w-full md:w-auto flex justify-center items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-5 py-2.5 rounded-lg cursor-pointer transition-all shadow-sm shadow-cyan-600/20 text-sm font-semibold"
+                  className="inline-flex h-12 min-w-[180px] items-center justify-center gap-2 rounded-2xl border border-[#cfe3ef] bg-white px-5 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b]"
                 >
                   <Upload className="w-4 h-4" /> Upload File
                 </button>
@@ -1229,75 +1166,32 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
         </div>
       </div>
 
+      <div className="border-b border-slate-200 bg-white px-4 md:px-8">
+        <div className="mx-auto flex max-w-6xl gap-1 overflow-x-auto">
+          {[
+            { id: 'overview', label: 'Folder' },
+            { id: 'notes', label: 'Scribe' },
+            { id: 'chat', label: 'Agent' },
+            { id: 'sessions', label: 'History' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={`border-b-2 px-4 pb-3 pt-3 text-sm font-semibold transition-all whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'border-cyan-600 text-cyan-700'
+                  : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50">
-        <div className="max-w-6xl mx-auto">
-          {/* AI Panel */}
-          {hasAiContent && showAiPanel && (
-            <div className="mb-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">AI Insights</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleGenerateAiInsights}
-                    disabled={aiLoading}
-                    className="text-xs font-medium text-sky-600 hover:text-sky-700 flex items-center gap-1 transition-colors px-2 py-1 rounded hover:bg-sky-50 disabled:opacity-50"
-                  >
-                    {aiLoading ? 'Updating…' : 'Refresh'}
-                  </button>
-                  <button
-                    onClick={() => setShowAiPanel(false)}
-                    className="text-xs font-medium text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors px-2 py-1 rounded hover:bg-slate-100"
-                  >
-                    <X size={12} /> Hide
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <SmartSummary summary={summary} loading={aiLoading} />
-                {alerts.length > 0 && (
-                  <div>
-                    <LabAlerts alerts={alerts} />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* CTA to generate insights (only when not yet generated) */}
-          {!hasAiContent && (
-            <div className="mb-4">
-              <button
-                onClick={handleGenerateAiInsights}
-                disabled={aiLoading || status === AppStatus.LOADING}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-50 hover:bg-cyan-100 border border-cyan-100 text-xs font-semibold text-cyan-700 transition disabled:opacity-50"
-              >
-                {aiLoading ? 'Generating AI insights…' : 'Generate AI insights for this patient'}
-              </button>
-            </div>
-          )}
-
-          {/* Tabs */}
-          <div className="flex gap-1 border-b border-slate-200 mb-6 overflow-x-auto">
-            {[
-              { id: 'overview', label: 'Folder' },
-              { id: 'notes', label: 'Scribe' },
-              { id: 'chat', label: 'Agent' },
-              { id: 'sessions', label: 'History' },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className={`px-4 pb-3 pt-1 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'border-cyan-600 text-cyan-700'
-                    : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+      <div className="flex-1 overflow-y-auto bg-slate-50/50 px-4 py-4 md:px-6 md:py-5">
+        <div className="mx-auto max-w-6xl">
 
           {activeTab === 'overview' ? (
             <FileBrowser
@@ -1313,158 +1207,96 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               onCreateFolder={() => setShowCreateFolderModal(true)}
             />
           ) : activeTab === 'sessions' ? (
-            <div className="flex flex-col lg:flex-row gap-6">
-              {/* Left: Patient Summary Panel */}
-              <div className="lg:w-72 shrink-0">
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden sticky top-0">
-                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Patient Summary
-                    </span>
-                    <button
-                      onClick={handleGenerateAiInsights}
-                      disabled={aiLoading || status === AppStatus.LOADING}
-                      className="text-[11px] font-medium text-cyan-600 hover:text-cyan-700 disabled:opacity-40 transition-colors"
-                    >
-                      {aiLoading ? 'Updating…' : summary.length > 0 ? 'Refresh' : 'Generate'}
-                    </button>
-                  </div>
-                  <div className="p-4">
-                    {/* Patient info */}
-                    <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
-                      <div className="w-10 h-10 rounded-full bg-cyan-100 text-cyan-700 flex items-center justify-center text-sm font-bold shrink-0">
-                        {patient.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-800 text-sm">{patient.name}</p>
-                        <p className="text-xs text-slate-500">{patient.dob} · {patient.sex || 'Unknown'}</p>
-                      </div>
-                    </div>
-                    {aiLoading ? (
-                      <div className="flex items-center gap-2 py-4 justify-center">
-                        <Loader2 size={16} className="text-cyan-500 animate-spin" />
-                        <span className="text-xs text-slate-400">Analysing patient records…</span>
-                      </div>
-                    ) : summary.length > 0 ? (
-                      <ul className="space-y-2.5">
-                        {summary.map((point, i) => (
-                          <li key={i} className="flex gap-2 text-sm text-slate-700 leading-relaxed">
-                            <span className="text-cyan-500 mt-0.5 shrink-0">•</span>
-                            <span>{point}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="text-center py-4">
-                        <p className="text-xs text-slate-400 mb-3">
-                          Generate a clinical summary from patient files to add context to the history view.
-                        </p>
-                        <button
-                          onClick={handleGenerateAiInsights}
-                          disabled={aiLoading || status === AppStatus.LOADING || files.length === 0}
-                          className="text-xs font-medium text-cyan-600 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 px-3 py-1.5 rounded-lg transition disabled:opacity-40"
-                        >
-                          Generate Summary
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right: Session cards */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-3">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                     Previous Sessions {sessions.length > 0 && `(${sessions.length})`}
                   </span>
-                  <p className="text-xs text-slate-400">
-                    Click a session to open it in Scribe
+                  <p className="mt-1 text-sm text-slate-500">
+                    Open any saved consultation to review its transcript and notes in Scribe.
                   </p>
                 </div>
-
-                {sessionsLoading ? (
-                  <div className="flex items-center justify-center py-16">
-                    <Loader2 className="w-7 h-7 text-cyan-500 animate-spin" />
-                  </div>
-                ) : sessions.length === 0 ? (
-                  <div className="bg-white rounded-xl border border-slate-200 border-dashed p-10 text-center">
-                    <p className="text-sm text-slate-400">
-                      No sessions yet. Record a consultation and generate notes from the Scribe tab.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {sessions.map(session => {
-                      const createdDate = session.createdAt ? new Date(session.createdAt) : null;
-                      const formattedDate = createdDate
-                        ? createdDate.toLocaleDateString(undefined, {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric',
-                          })
-                        : 'Unknown date';
-                      const labelTime = createdDate
-                        ? createdDate.toLocaleTimeString(undefined, {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : '';
-                      const mainComplaint =
-                        session.mainComplaint?.trim() ||
-                        (session.notes && session.notes.length > 0
-                          ? extractMainComplaint(session.notes[0].content)
-                          : '');
-                      const hasNotes = session.notes && session.notes.length > 0;
-                      return (
-                        <button
-                          key={session.id}
-                          type="button"
-                          onClick={() => handleLoadSession(session)}
-                          className="w-full flex items-center justify-between gap-4 px-4 py-3.5 rounded-xl border border-slate-200 bg-white text-left hover:bg-cyan-50 hover:border-cyan-200 transition-all group shadow-sm"
-                        >
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                              <span className="text-[11px] font-bold text-slate-500">
-                                {formattedDate.slice(0, 2)}
-                              </span>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-semibold text-slate-800 text-sm truncate">
-                                {mainComplaint || 'Consultation'}
-                              </p>
-                              <p className="text-xs text-slate-400 mt-0.5">
-                                {formattedDate}
-                                {labelTime && ` · ${labelTime}`}
-                                {hasNotes
-                                  ? ` · ${session.notes!.length} note${session.notes!.length !== 1 ? 's' : ''}`
-                                  : ' · transcript only'}
-                              </p>
-                            </div>
-                          </div>
-                          <ChevronRight
-                            size={16}
-                            className="text-slate-300 group-hover:text-cyan-500 transition-colors shrink-0"
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <History className="hidden h-5 w-5 text-cyan-500 md:block" />
               </div>
+
+              {sessionsLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-7 h-7 text-cyan-500 animate-spin" />
+                </div>
+              ) : sessions.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-10 text-center">
+                  <p className="text-sm text-slate-400">
+                    No sessions yet. Record a consultation and generate notes from the Scribe tab.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {sessions.map(session => {
+                    const createdDate = session.createdAt ? new Date(session.createdAt) : null;
+                    const formattedDate = createdDate
+                      ? createdDate.toLocaleDateString(undefined, {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })
+                      : 'Unknown date';
+                    const labelTime = createdDate
+                      ? createdDate.toLocaleTimeString(undefined, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '';
+                    const mainComplaint =
+                      session.mainComplaint?.trim() ||
+                      (session.notes && session.notes.length > 0
+                        ? extractMainComplaint(session.notes[0].content)
+                        : '');
+                    const hasNotes = session.notes && session.notes.length > 0;
+                    return (
+                      <button
+                        key={session.id}
+                        type="button"
+                        onClick={() => handleLoadSession(session)}
+                        className="group flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-all hover:border-cyan-200 hover:bg-cyan-50/50"
+                      >
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-[11px] font-bold text-slate-500 shrink-0">
+                            {formattedDate.slice(0, 2)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-800">
+                              {mainComplaint || 'Consultation'}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-400">
+                              {formattedDate}
+                              {labelTime && ` - ${labelTime}`}
+                              {hasNotes
+                                ? ` - ${session.notes!.length} note${session.notes!.length !== 1 ? 's' : ''}`
+                                : ' - transcript only'}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight
+                          size={16}
+                          className="shrink-0 text-slate-300 transition-colors group-hover:text-cyan-500"
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ) : activeTab === 'notes' ? (
             <>
-              <div className="mb-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => handleLoadSession(null)}
-                  className="text-xs font-medium text-sky-600 hover:text-sky-700 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-sky-200 bg-sky-50/80 hover:bg-sky-50 transition"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Start new session
-                </button>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                  Consultation Workspace
+                </span>
                 <span className="text-[11px] text-slate-400">
-                  {activeSessionId ? 'Viewing a previous session' : 'Current session'}
+                  {activeSessionId
+                    ? 'Viewing history. Recording starts a fresh session.'
+                    : 'Current session'}
                 </span>
               </div>
 
@@ -1793,6 +1625,7 @@ export const PatientWorkspace: React.FC<Props> = ({ patient, onBack, onDataChang
               chatLoading={chatLoading}
               chatLongWait={chatLongWait}
               onSendChat={handleSendChat}
+              onToast={onToast}
             />
           )}
         </div>

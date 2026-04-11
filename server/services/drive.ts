@@ -263,6 +263,41 @@ export async function downloadFileBuffer(token: string, fileId: string): Promise
   return Buffer.from(arrayBuffer);
 }
 
+export async function extractTextFromBuffer(
+  file: { name: string; mimeType: string },
+  buffer: Buffer,
+  maxChars = 2000
+): Promise<string> {
+  try {
+    if (file.mimeType === 'text/plain' || file.name.endsWith('.txt')) {
+      return buffer.toString('utf-8').substring(0, maxChars);
+    }
+
+    if (file.mimeType === 'application/pdf' || file.name.endsWith('.pdf')) {
+      const { PDFParse } = await import('pdf-parse');
+      const parser = new PDFParse({ data: new Uint8Array(buffer) });
+      const result = await parser.getText();
+      await parser.destroy();
+      return (result.text || '').substring(0, maxChars);
+    }
+
+    if (
+      file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      file.mimeType === 'application/msword' ||
+      file.name.endsWith('.docx') ||
+      file.name.endsWith('.doc')
+    ) {
+      const result = await mammoth.extractRawText({ buffer });
+      return (result.value || '').substring(0, maxChars);
+    }
+
+    return '';
+  } catch (err) {
+    console.error(`[extractTextFromBuffer] Failed for ${file.name}:`, err);
+    return '';
+  }
+}
+
 /**
  * Extract readable text from a Drive file based on its MIME type.
  * Supports: text/plain, Google Docs, PDF, DOCX, and Word.
@@ -289,25 +324,16 @@ export async function extractTextFromFile(
       return text.substring(0, maxChars);
     }
 
-    if (file.mimeType === 'application/pdf' || file.name.endsWith('.pdf')) {
-      const buffer = await downloadFileBuffer(token, file.id);
-      // Dynamic import - polyfills are already set up at module load time
-      const { PDFParse } = await import('pdf-parse');
-      const parser = new PDFParse({ data: new Uint8Array(buffer) });
-      const result = await parser.getText();
-      await parser.destroy();
-      return (result.text || '').substring(0, maxChars);
-    }
-
     if (
+      file.mimeType === 'application/pdf' ||
+      file.name.endsWith('.pdf') ||
       file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       file.mimeType === 'application/msword' ||
       file.name.endsWith('.docx') ||
       file.name.endsWith('.doc')
     ) {
       const buffer = await downloadFileBuffer(token, file.id);
-      const result = await mammoth.extractRawText({ buffer });
-      return (result.value || '').substring(0, maxChars);
+      return extractTextFromBuffer(file, buffer, maxChars);
     }
 
     return '';

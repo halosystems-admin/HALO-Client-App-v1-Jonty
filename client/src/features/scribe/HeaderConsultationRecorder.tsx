@@ -1,23 +1,29 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, Pause, Play } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, Mic, Pause, Play, Radio, StopCircle } from 'lucide-react';
 import { getTranscribeWebSocketUrl, transcribeAudio } from '../../services/api';
 
 export interface HeaderConsultationRecorderProps {
+  onBeforeStart?: () => void;
   onLiveTranscriptUpdate: (transcript: string) => void;
   onLiveStopped: (transcript: string) => void;
   onError?: (message: string) => void;
 }
 
-type ConnectionState = 'idle' | 'connecting' | 'open' | 'closed';
+type RecorderStatus =
+  | 'idle'
+  | 'connecting'
+  | 'recording'
+  | 'paused'
+  | 'finishing'
+  | 'error';
 
 export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProps> = ({
+  onBeforeStart,
   onLiveTranscriptUpdate,
   onLiveStopped,
   onError,
 }) => {
-  const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
-  const [isLive, setIsLive] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
+  const [status, setStatus] = useState<RecorderStatus>('idle');
   const [audioLevel, setAudioLevel] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
 
@@ -31,10 +37,13 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
   const recordingMimeTypeRef = useRef<string>('audio/webm');
   const transcriptRef = useRef<string>('');
   const timerRef = useRef<number | null>(null);
-  /** Tracks whether the current stop was user-initiated (to suppress reconnect logic). */
-  const userStoppedRef = useRef<boolean>(false);
-  /** Number of WS reconnect attempts for the current session. */
-  const reconnectAttemptsRef = useRef<number>(0);
+  const statusRef = useRef<RecorderStatus>('idle');
+  const stopPromiseRef = useRef<Promise<void> | null>(null);
+
+  const setRecorderStatus = (next: RecorderStatus) => {
+    statusRef.current = next;
+    setStatus(next);
+  };
 
   const stopAudioVisualization = () => {
     if (rafRef.current != null) {
@@ -76,7 +85,7 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
 
       rafRef.current = requestAnimationFrame(tick);
     } catch {
-      // Visualization is best-effort only
+      // Visualization is best-effort only.
     }
   };
 
@@ -95,34 +104,56 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
     }, 500);
   };
 
-  const cleanup = useCallback(() => {
-    if (wsRef.current) {
-      try {
-        if (wsRef.current.readyState === WebSocket.OPEN) wsRef.current.send('end');
-        wsRef.current.close();
-      } catch {
-        // ignore
-      }
-      wsRef.current = null;
+  const detachSocketHandlers = () => {
+    if (!wsRef.current) return;
+    wsRef.current.onopen = null;
+    wsRef.current.onmessage = null;
+    wsRef.current.onclose = null;
+    wsRef.current.onerror = null;
+  };
+
+  const closeSocket = () => {
+    if (!wsRef.current) return;
+    const socket = wsRef.current;
+    detachSocketHandlers();
+    try {
+      if (socket.readyState === WebSocket.OPEN) socket.send('end');
+      socket.close();
+    } catch {
+      // ignore
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current = null;
-    }
+    wsRef.current = null;
+  };
+
+  const stopStream = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+  };
+
+  const stopMediaRecorder = async () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') {
+      mediaRecorderRef.current = null;
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      const handleStop = () => resolve();
+      recorder.addEventListener('stop', handleStop, { once: true });
+      recorder.stop();
+    });
+
+    mediaRecorderRef.current = null;
+  };
+
+  const resetVisualState = () => {
     stopAudioVisualization();
     stopTimer();
-    setConnectionState('idle');
-    setIsPaused(false);
     setElapsedMs(0);
-  }, []);
-
-  useEffect(() => {
-    return () => cleanup();
-  }, [cleanup]);
+    setAudioLevel(0);
+  };
 
   const runFallbackTranscription = useCallback(async (): Promise<string> => {
     if (!chunksRef.current.length) return '';
@@ -130,6 +161,7 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
       const blob = new Blob(chunksRef.current, {
         type: recordingMimeTypeRef.current || 'audio/webm',
       });
+
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -161,30 +193,64 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
     }
   }, [onError]);
 
-  const stopLive = useCallback(async () => {
-    userStoppedRef.current = true;
-    reconnectAttemptsRef.current = 0;
-    const streamedText = transcriptRef.current.trim();
-    cleanup();
-    setIsLive(false);
+  const finalizeStop = useCallback(async () => {
+    if (stopPromiseRef.current) return stopPromiseRef.current;
 
-    let finalText = streamedText;
-    if (!finalText && chunksRef.current.length > 0) {
-      finalText = await runFallbackTranscription();
-    }
+    const task = (async () => {
+      setRecorderStatus('finishing');
 
-    if (finalText) {
-      onLiveStopped(finalText);
-    }
-  }, [cleanup, onLiveStopped, runFallbackTranscription]);
+      const streamedText = transcriptRef.current.trim();
+
+      closeSocket();
+      await stopMediaRecorder();
+      stopStream();
+      resetVisualState();
+
+      let finalText = streamedText;
+      if (!finalText && chunksRef.current.length > 0) {
+        finalText = await runFallbackTranscription();
+      }
+
+      chunksRef.current = [];
+      transcriptRef.current = '';
+
+      if (finalText) {
+        onLiveStopped(finalText);
+      }
+
+      setRecorderStatus('idle');
+    })()
+      .catch((err) => {
+        console.error('[HeaderConsultationRecorder] Finalize error:', err);
+        setRecorderStatus('error');
+        onError?.('Could not finish this consultation recording. Please try again.');
+      })
+      .finally(() => {
+        stopPromiseRef.current = null;
+      });
+
+    stopPromiseRef.current = task;
+    return task;
+  }, [onError, onLiveStopped, runFallbackTranscription]);
+
+  useEffect(() => {
+    return () => {
+      closeSocket();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      stopStream();
+      resetVisualState();
+    };
+  }, []);
 
   const startLive = useCallback(async () => {
-    if (isLive || connectionState === 'connecting') return;
-    userStoppedRef.current = false;
+    if (statusRef.current !== 'idle' && statusRef.current !== 'error') return;
+
     transcriptRef.current = '';
     chunksRef.current = [];
     setElapsedMs(0);
-    setConnectionState('connecting');
+    setRecorderStatus('connecting');
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -198,194 +264,270 @@ export const HeaderConsultationRecorder: React.FC<HeaderConsultationRecorderProp
           : 'audio/webm';
       recordingMimeTypeRef.current = mimeType;
 
-      const wsUrl = getTranscribeWebSocketUrl();
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(getTranscribeWebSocketUrl());
       wsRef.current = ws;
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = () => {
-        setConnectionState('open');
+        onBeforeStart?.();
         const mediaRecorder = new MediaRecorder(stream, { mimeType });
         mediaRecorderRef.current = mediaRecorder;
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            chunksRef.current.push(e.data);
-            if (ws.readyState === WebSocket.OPEN && !isPaused) {
-              ws.send(e.data);
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            chunksRef.current.push(event.data);
+            if (ws.readyState === WebSocket.OPEN && statusRef.current === 'recording') {
+              ws.send(event.data);
             }
           }
         };
         mediaRecorder.start(250);
-        setIsLive(true);
-        setIsPaused(false);
+        setRecorderStatus('recording');
         startTimer();
       };
 
       ws.onmessage = (event) => {
         try {
-          const msg = JSON.parse(event.data as string) as { type: string; transcript?: string; message?: string };
+          const msg = JSON.parse(event.data as string) as {
+            type: string;
+            transcript?: string;
+            message?: string;
+          };
           if (msg.type === 'transcript' && typeof msg.transcript === 'string' && msg.transcript.trim()) {
             const prev = transcriptRef.current;
-            const sep = prev ? (prev.endsWith(' ') || msg.transcript.startsWith(' ') ? '' : ' ') : '';
-            transcriptRef.current = prev + sep + msg.transcript.trim();
+            const nextChunk = msg.transcript.trim();
+            const separator =
+              prev && !prev.endsWith(' ') && !nextChunk.startsWith(' ') ? ' ' : '';
+            transcriptRef.current = `${prev}${separator}${nextChunk}`;
             onLiveTranscriptUpdate(transcriptRef.current);
           }
           if (msg.type === 'error') {
-            console.error('[HeaderConsultationRecorder] WebSocket error message from server:', msg.message);
             onError?.(msg.message || 'Live transcription error');
           }
         } catch {
-          // ignore non-JSON
+          // Ignore malformed events.
         }
       };
 
-      ws.onclose = (event) => {
-        setConnectionState('closed');
-        // If user explicitly stopped, just finalise normally
-        if (userStoppedRef.current) {
-          void stopLive();
-          return;
-        }
-        // Unexpected disconnection — attempt one reconnect after 2s
-        const MAX_RECONNECTS = 1;
-        if (reconnectAttemptsRef.current < MAX_RECONNECTS && streamRef.current) {
-          reconnectAttemptsRef.current += 1;
-          onError?.(`Live transcription disconnected (code ${event.code}). Reconnecting…`);
-          setTimeout(() => {
-            if (!userStoppedRef.current && streamRef.current) {
-              // Reconnect WS only — keep existing stream/recorder
-              try {
-                const newWsUrl = getTranscribeWebSocketUrl();
-                const newWs = new WebSocket(newWsUrl);
-                newWs.binaryType = 'arraybuffer';
-                wsRef.current = newWs;
-                newWs.onopen = () => { setConnectionState('open'); };
-                newWs.onmessage = ws.onmessage;
-                newWs.onclose = ws.onclose;
-                newWs.onerror = ws.onerror;
-              } catch {
-                void stopLive();
-              }
-            }
-          }, 2000);
-        } else {
-          onError?.('Live transcription connection lost. Your audio has been saved and will be transcribed.');
-          void stopLive();
-        }
+      ws.onclose = () => {
+        if (statusRef.current === 'finishing' || statusRef.current === 'idle') return;
+        onError?.('Live transcription connection lost. Finalising the consultation now.');
+        void finalizeStop();
       };
 
       ws.onerror = () => {
-        onError?.('Live transcription failed to connect. Check that DEEPGRAM_API_KEY is configured on the server.');
+        if (statusRef.current === 'connecting') {
+          onError?.('Live transcription failed to connect. Check that DEEPGRAM_API_KEY is configured on the server.');
+        }
       };
     } catch (err) {
-      setConnectionState('idle');
+      closeSocket();
+      stopStream();
+      resetVisualState();
+      setRecorderStatus('error');
       onError?.(
         err instanceof Error ? err.message : 'Could not access microphone. Please check your browser permissions.'
       );
     }
-  }, [connectionState, isLive, onLiveTranscriptUpdate, onError, stopLive]);
+  }, [finalizeStop, onBeforeStart, onError, onLiveTranscriptUpdate]);
 
-  const togglePause = () => {
-    if (!isLive || connectionState !== 'open') return;
-    setIsPaused(prev => !prev);
-  };
+  const stopLive = useCallback(async () => {
+    if (!['connecting', 'recording', 'paused'].includes(statusRef.current)) return;
+    await finalizeStop();
+  }, [finalizeStop]);
+
+  const togglePause = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+
+    if (statusRef.current === 'recording' && recorder.state === 'recording') {
+      recorder.pause();
+      stopTimer();
+      setRecorderStatus('paused');
+      return;
+    }
+
+    if (statusRef.current === 'paused' && recorder.state === 'paused') {
+      recorder.resume();
+      startTimer();
+      setRecorderStatus('recording');
+    }
+  }, [elapsedMs]);
 
   useEffect(() => {
-    if (!mediaRecorderRef.current || !wsRef.current) return;
-    // MediaRecorder keeps recording; pause only affects whether chunks are sent to WS.
-  }, [isPaused]);
-
-  // Keyboard shortcut: Space to start/stop recording (only when no text input is focused)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return;
-      const target = e.target as HTMLElement;
-      const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      const target = event.target as HTMLElement;
+      const isTyping =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable;
       if (isTyping) return;
-      e.preventDefault();
-      if (connectionState === 'connecting') return;
-      if (isLive) {
+      event.preventDefault();
+
+      if (statusRef.current === 'recording' || statusRef.current === 'paused') {
         void stopLive();
-      } else {
+        return;
+      }
+
+      if (statusRef.current === 'idle' || statusRef.current === 'error') {
         void startLive();
       }
     };
+
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isLive, connectionState, startLive, stopLive]);
+  }, [startLive, stopLive]);
 
-  const isBusy = connectionState === 'connecting';
-  const seconds = Math.floor(elapsedMs / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const displayTime = `${minutes.toString().padStart(2, '0')}:${(seconds % 60)
-    .toString()
-    .padStart(2, '0')}`;
+  const statusMeta = useMemo(() => {
+    if (status === 'connecting') {
+      return {
+        title: 'Connecting',
+        subtitle: 'Preparing live transcription...',
+        badge: 'Connecting to microphone',
+      };
+    }
+    if (status === 'recording') {
+      return {
+        title: 'Recording',
+        subtitle: `${Math.floor(elapsedMs / 1000 / 60)
+          .toString()
+          .padStart(2, '0')}:${Math.floor((elapsedMs / 1000) % 60)
+          .toString()
+          .padStart(2, '0')} - Dictating live`,
+        badge: 'Consultation recording live',
+      };
+    }
+    if (status === 'paused') {
+      return {
+        title: 'Paused',
+        subtitle: 'Resume to continue this consultation',
+        badge: 'Consultation paused',
+      };
+    }
+    if (status === 'finishing') {
+      return {
+        title: 'Finishing',
+        subtitle: 'Finalising and transcribing audio...',
+        badge: 'Processing recording',
+      };
+    }
+    if (status === 'error') {
+      return {
+        title: 'Retry Recording',
+        subtitle: 'The last attempt did not complete',
+        badge: 'Recorder needs attention',
+      };
+    }
+      return {
+        title: 'Record Consultation',
+        subtitle: 'Space to start - Dictate while you examine',
+        badge: 'Ready to record',
+      };
+  }, [elapsedMs, status]);
+
+  const isBusy = status === 'connecting' || status === 'finishing';
+  const isActive = status === 'recording' || status === 'paused' || status === 'finishing';
 
   return (
     <div className="flex items-center gap-3">
-      <div className="hidden md:flex flex-col items-end mr-1">
-        {isLive && (
-          <span className="text-[11px] font-medium text-slate-500">
-            Recording consultation · {displayTime}
+      <div className="hidden md:flex min-w-[170px] flex-col items-end text-right">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+          {statusMeta.badge}
+        </span>
+        {isActive && (
+          <span className="mt-1 text-xs text-slate-500">
+            {status === 'finishing' ? 'Preparing transcript...' : 'Consultation in progress'}
           </span>
         )}
       </div>
+
       <div className="flex items-center gap-2">
-        {isLive && (
+        {(status === 'recording' || status === 'paused') && (
           <button
             type="button"
             onClick={togglePause}
-            className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-full border border-red-100 bg-white text-[11px] font-medium text-slate-700 hover:bg-red-50 transition"
+            className="hidden h-12 items-center gap-2 rounded-2xl border border-[#cfe3ef] bg-white px-4 text-sm font-semibold text-[#2f84b4] shadow-sm transition hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b] md:inline-flex"
           >
-            {isPaused ? (
+            {status === 'paused' ? (
               <>
-                <Play className="w-3.5 h-3.5" /> Resume
+                <Play className="h-4 w-4" /> Resume
               </>
             ) : (
               <>
-                <Pause className="w-3.5 h-3.5" /> Pause
+                <Pause className="h-4 w-4" /> Pause
               </>
             )}
           </button>
         )}
+
         <button
           type="button"
-          onClick={isLive ? () => void stopLive() : () => void startLive()}
+          onClick={
+            status === 'recording' || status === 'paused'
+              ? () => void stopLive()
+              : () => void startLive()
+          }
           disabled={isBusy}
-          className={`flex items-center gap-3 rounded-full px-4 py-2 text-sm font-semibold shadow-md transition-all ${
-            isLive
-              ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-500/30'
-              : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-500/30'
-          } ${isBusy ? 'opacity-70 cursor-not-allowed' : ''}`}
+          className={`inline-flex h-12 min-w-[220px] items-center gap-3 rounded-2xl border px-4 text-sm font-semibold shadow-sm transition ${
+            isActive
+              ? 'border-[#f0c6cc] bg-white text-slate-700 hover:bg-rose-50'
+              : 'border-[#cfe3ef] bg-white text-[#2f84b4] hover:border-[#9fd0e6] hover:bg-[#f2f9fd] hover:text-[#236f9b]'
+          } ${isBusy ? 'cursor-not-allowed opacity-75' : ''}`}
         >
-          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-white/10">
-            <Mic className="w-4 h-4 text-white" />
+          <div
+            className={`flex h-8 w-8 items-center justify-center rounded-full ${
+              status === 'finishing'
+                ? 'bg-sky-100 text-sky-600'
+                : status === 'recording' || status === 'paused'
+                  ? 'bg-rose-100 text-rose-600'
+                  : 'bg-sky-100 text-sky-600'
+            }`}
+          >
+            {status === 'finishing' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : status === 'recording' || status === 'paused' ? (
+              <StopCircle className="h-4 w-4" />
+            ) : (
+              <Mic className="h-4 w-4" />
+            )}
           </div>
-          <div className="flex flex-col items-start">
-            <span className="text-xs uppercase tracking-wide">
-              {isLive ? 'Recording' : 'Record consultation'}
+
+          <div className="flex flex-col items-start leading-tight">
+            <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
+              {statusMeta.title}
             </span>
-            <span className="text-[11px] font-normal opacity-80">
-              {isLive ? displayTime : 'Space to start · Dictate while you examine'}
+            <span className="mt-0.5 text-[11px] font-medium text-slate-500">
+              {statusMeta.subtitle}
             </span>
           </div>
-          <div className="hidden md:flex items-end gap-[2px] h-4">
-            {Array.from({ length: 8 }).map((_, i) => {
-              const intensity = Math.max(0.2, Math.min(1, audioLevel * 5 + i * 0.05));
+
+          <div className="ml-auto hidden items-end gap-[2px] md:flex">
+            {Array.from({ length: 8 }).map((_, index) => {
+              const intensity =
+                status === 'recording'
+                  ? Math.max(0.15, Math.min(1, audioLevel * 5 + index * 0.04))
+                  : 0.18;
               const height = 4 + intensity * 10;
               return (
                 <span
-                  // eslint-disable-next-line react/no-array-index-key
-                  key={i}
-                  className="w-[3px] rounded-full bg-white/80"
+                  key={index}
+                  className={`w-[3px] rounded-full ${
+                    status === 'recording' ? 'bg-[#57afd8]' : 'bg-slate-300'
+                  }`}
                   style={{ height }}
                 />
               );
             })}
           </div>
         </button>
+
+        {(status === 'recording' || status === 'paused') && (
+          <div className="inline-flex h-12 items-center gap-2 rounded-2xl border border-[#d8e7ef] bg-white px-4 text-sm font-semibold text-slate-500 shadow-sm md:hidden">
+            <Radio className={`h-4 w-4 ${status === 'paused' ? 'text-slate-400' : 'text-rose-500'}`} />
+            {status === 'paused' ? 'Paused' : 'Live'}
+          </div>
+        )}
       </div>
     </div>
   );
 };
-

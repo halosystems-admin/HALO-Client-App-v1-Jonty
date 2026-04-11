@@ -38,6 +38,12 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface ChatAttachment {
+  name: string;
+  mimeType: string;
+  base64Data: string;
+}
+
 export enum AppStatus {
   IDLE = 'idle',
   LOADING = 'loading',
