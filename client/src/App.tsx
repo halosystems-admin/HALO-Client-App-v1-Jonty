@@ -12,6 +12,7 @@ import { LogIn, Loader, X, UserPlus, Calendar, Users, AlertTriangle, Trash2, Sca
 import { CalendarPage } from './pages/CalendarPage';
 import { AdmissionsPage } from './pages/AdmissionsPage';
 import { EvidencePage } from './pages/EvidencePage';
+import { BillingPage } from './pages/BillingPage';
 
 export const App = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -64,7 +65,7 @@ export const App = () => {
   // Calendar / bookings
   const [calendarPrepEvent, setCalendarPrepEvent] = useState<CalendarEvent | null>(null);
   const [activeMainView, setActiveMainView] = useState<
-    'workspace' | 'calendar' | 'admissions' | 'evidence'
+    'workspace' | 'calendar' | 'admissions' | 'evidence' | 'billing'
   >('workspace');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -112,6 +113,8 @@ export const App = () => {
       setActiveMainView('workspace');
     }
   }, [activeMainView, userSettings?.modules?.evidence]);
+
+  // Billing is global (not module-flagged yet) — no settings gate for now.
 
   // Persist selected patient to sessionStorage so it survives page refresh
   // Also track recently opened patients in localStorage
@@ -389,6 +392,8 @@ export const App = () => {
         ? 'Admissions'
         : activeMainView === 'evidence'
           ? 'Evidence'
+          : activeMainView === 'billing'
+            ? 'Billing'
           : activePatient
             ? activePatient.name
             : 'Patients';
@@ -430,6 +435,10 @@ export const App = () => {
           evidenceEnabled={evidenceEnabled}
           onOpenEvidence={() => {
             setActiveMainView('evidence');
+            closeMobileMenu();
+          }}
+          onOpenBilling={() => {
+            setActiveMainView('billing');
             closeMobileMenu();
           }}
           collapsed={sidebarCollapsed}
@@ -485,6 +494,10 @@ export const App = () => {
                 setActiveMainView('evidence');
                 closeMobileMenu();
               }}
+              onOpenBilling={() => {
+                setActiveMainView('billing');
+                closeMobileMenu();
+              }}
               collapsed={false}
               onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
               inMobileDrawer
@@ -533,6 +546,8 @@ export const App = () => {
           />
         ) : activeMainView === 'evidence' && evidenceEnabled ? (
           <EvidencePage patients={patients} onToast={showToast} />
+        ) : activeMainView === 'billing' ? (
+          <BillingPage onToast={showToast} />
         ) : activePatient ? (
           <PatientWorkspace
             key={activePatient.id}

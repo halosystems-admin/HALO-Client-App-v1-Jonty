@@ -4,6 +4,7 @@ import {
   Plus, LogOut, Search, Trash2, ChevronDown,
   Settings, Loader2, Calendar as CalendarIcon, Users, Clock, ChevronsLeft, ChevronsRight, LayoutPanelTop,
   BookMarked,
+  CreditCard,
 } from 'lucide-react';
 import { searchPatientsByConcept } from '../services/api';
 
@@ -17,13 +18,14 @@ interface SidebarProps {
   onLogout: () => void;
   onOpenSettings: () => void;
   userEmail?: string;
-  activeMainView?: 'workspace' | 'calendar' | 'admissions' | 'evidence';
+  activeMainView?: 'workspace' | 'calendar' | 'admissions' | 'evidence' | 'billing';
   onOpenPatients?: () => void;
   onOpenCalendar?: () => void;
   admissionsEnabled?: boolean;
   onOpenAdmissions?: () => void;
   evidenceEnabled?: boolean;
   onOpenEvidence?: () => void;
+  onOpenBilling?: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   /** When true, hides the desktop collapse control (mobile drawer). */
@@ -47,6 +49,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenAdmissions,
   evidenceEnabled = true,
   onOpenEvidence,
+  onOpenBilling,
   collapsed = false,
   onToggleCollapse,
   inMobileDrawer = false,
@@ -60,6 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const calendarActive = activeMainView === 'calendar';
   const admissionsActive = activeMainView === 'admissions';
   const evidenceActive = activeMainView === 'evidence';
+  const billingActive = activeMainView === 'billing';
 
   // Local filter
   const localFiltered = patients.filter(
@@ -372,6 +376,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
         )}
+
+        {/* ── BILLING SECTION ── */}
+        <div className="mb-1">
+          <button
+            type="button"
+            onClick={() => onOpenBilling?.()}
+            title="Billing"
+            className={`w-full flex items-center rounded-xl text-sm font-medium transition-all ${
+              billingActive
+                ? 'bg-cyan-50 text-cyan-700'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+            } ${collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-3 py-2.5'}`}
+          >
+            <CreditCard size={17} className={billingActive ? 'text-cyan-600' : 'text-slate-400'} />
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left">Billing</span>
+                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                  MediKredit
+                </span>
+              </>
+            )}
+          </button>
+        </div>
       </nav>
 
       {/* Bottom: Create + User */}
