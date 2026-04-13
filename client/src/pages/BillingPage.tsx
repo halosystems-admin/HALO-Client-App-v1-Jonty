@@ -686,7 +686,8 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
     return {
       memberNumber: p.memberNumber.trim(),
       serviceDate: p.serviceDate,
-      schemeCode: compact(p.schemeCode),
+      // These are often required by upstream even if our OpenAPI marks them optional.
+      schemeCode: compact(p.schemeCode)?.toUpperCase(),
       planCode: compact(p.planCode),
       dependantCode: compact(p.dependantCode),
       patientDateOfBirth: compact(p.patientDateOfBirth),
@@ -701,8 +702,8 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
   };
 
   const check = async () => {
-    if (!payload.memberNumber.trim() || !payload.serviceDate) {
-      onToast('Member number and service date are required.', 'error');
+    if (!payload.memberNumber.trim() || !payload.serviceDate || !payload.schemeCode?.trim() || !payload.planCode?.trim()) {
+      onToast('Member number, service date, scheme code, and plan code are required.', 'error');
       return;
     }
     setLoading(true);
@@ -721,7 +722,10 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
   const set = (patch: Partial<BillingEligibilityPayload>) => setPayload(prev => ({ ...prev, ...patch }));
 
   return (
-    <Section title="Eligibility check" subtitle="Manual form. Required: memberNumber + serviceDate." right={
+    <Section
+      title="Eligibility check"
+      subtitle="Manual form. Required: memberNumber + serviceDate + schemeCode + planCode."
+      right={
       <SmallButton onClick={check} disabled={loading}>
         {loading ? <RefreshCw size={16} className="animate-spin" /> : null}
         Check
@@ -737,11 +741,16 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
           <Input type="date" value={payload.serviceDate} onChange={e => set({ serviceDate: e.target.value })} />
         </div>
         <div>
-          <Label>Scheme code</Label>
-          <Input value={payload.schemeCode || ''} onChange={e => set({ schemeCode: e.target.value })} placeholder="e.g. DISC" />
+          <Label>Scheme code *</Label>
+          <Input
+            value={payload.schemeCode || ''}
+            onChange={e => set({ schemeCode: e.target.value })}
+            placeholder="e.g. DISC"
+            autoCapitalize="characters"
+          />
         </div>
         <div>
-          <Label>Plan code</Label>
+          <Label>Plan code *</Label>
           <Input value={payload.planCode || ''} onChange={e => set({ planCode: e.target.value })} />
         </div>
         <div>
