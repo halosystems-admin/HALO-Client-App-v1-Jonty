@@ -677,6 +677,29 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
   const [result, setResult] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
 
+  const compactEligibilityPayload = (p: BillingEligibilityPayload): BillingEligibilityPayload => {
+    const compact = (value: string | undefined) => {
+      const v = (value ?? '').trim();
+      return v.length ? v : undefined;
+    };
+
+    return {
+      memberNumber: p.memberNumber.trim(),
+      serviceDate: p.serviceDate,
+      schemeCode: compact(p.schemeCode),
+      planCode: compact(p.planCode),
+      dependantCode: compact(p.dependantCode),
+      patientDateOfBirth: compact(p.patientDateOfBirth),
+      patientIdNumber: compact(p.patientIdNumber),
+      patientFirstName: compact(p.patientFirstName),
+      patientLastName: compact(p.patientLastName),
+      patientInitials: compact(p.patientInitials),
+      providerPracticeNumber: compact(p.providerPracticeNumber),
+      bhfNumber: compact(p.bhfNumber),
+      groupPracticeNumber: compact(p.groupPracticeNumber),
+    };
+  };
+
   const check = async () => {
     if (!payload.memberNumber.trim() || !payload.serviceDate) {
       onToast('Member number and service date are required.', 'error');
@@ -685,7 +708,7 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
     setLoading(true);
     setResult(null);
     try {
-      const res = await billingCheckEligibility(payload);
+      const res = await billingCheckEligibility(compactEligibilityPayload(payload));
       setResult(res);
       onToast(`Eligibility: ${res.status}.`, res.status === 'eligible' ? 'success' : 'info');
     } catch (e) {
