@@ -19,6 +19,7 @@ import {
 type ToastFn = (message: string, type?: 'success' | 'error' | 'info') => void;
 
 type BillingTab = 'claims' | 'eligibility' | 'era';
+type ClaimsSubTab = 'list' | 'submit' | 'reverse';
 
 export function BillingPage({ onToast }: { onToast: ToastFn }) {
   const [tab, setTab] = useState<BillingTab>('claims');
@@ -178,6 +179,7 @@ function formatCents(cents?: number | null): string {
 }
 
 function ClaimsTab({ onToast }: { onToast: ToastFn }) {
+  const [subTab, setSubTab] = useState<ClaimsSubTab>('list');
   const [claims, setClaims] = useState<StoredClaimRecord[] | null>(null);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [selectedClaimId, setSelectedClaimId] = useState<string>('');
@@ -311,136 +313,184 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
     <div className="space-y-4">
       <Section
         title="Claims"
-        subtitle="List and inspect claims persisted by the billing API."
+        subtitle="Work with billing claims: list, submit, and reverse."
         right={
-          <SmallButton onClick={refreshClaims} disabled={claimsLoading}>
-            <RefreshCw size={16} className={claimsLoading ? 'animate-spin' : ''} />
-            Refresh
-          </SmallButton>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setSubTab('list')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-full transition ${
+                  subTab === 'list'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTab('submit')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-full transition ${
+                  subTab === 'submit'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Submit
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTab('reverse')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-full transition ${
+                  subTab === 'reverse'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Reverse
+              </button>
+            </div>
+            <SmallButton onClick={refreshClaims} disabled={claimsLoading} variant="secondary">
+              <RefreshCw size={16} className={claimsLoading ? 'animate-spin' : ''} />
+              Refresh
+            </SmallButton>
+          </div>
         }
       >
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Recent claims</p>
-            {claims === null ? (
-              <p className="text-sm text-slate-500">Click refresh to load claims.</p>
-            ) : claims.length === 0 ? (
-              <p className="text-sm text-slate-500">No claims found.</p>
-            ) : (
-              <div className="space-y-2">
-                {claims.map(c => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedClaimId(c.id);
-                      setSelectedClaim(null);
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:bg-slate-50"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-semibold text-slate-800">{c.patientLastName || '—'}</p>
-                      <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                        {c.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-slate-500">
-                      Member: {c.memberNumber} • Tx: {c.transactionNumber || '—'}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-3">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Fetch by ID</p>
-            <div className="flex gap-2">
-              <Input
-                value={selectedClaimId}
-                onChange={e => setSelectedClaimId(e.target.value)}
-                placeholder="Claim UUID"
-              />
-              <SmallButton onClick={loadClaimDetail} disabled={detailLoading}>
-                {detailLoading ? <RefreshCw size={16} className="animate-spin" /> : null}
-                Load
-              </SmallButton>
-            </div>
-            <div className="mt-3">
-              {selectedClaim ? (
-                <pre className="max-h-[340px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                  {JSON.stringify(selectedClaim, null, 2)}
-                </pre>
+        {subTab === 'list' && (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Recent claims</p>
+              {claims === null ? (
+                <p className="text-sm text-slate-500">Click refresh to load claims.</p>
+              ) : claims.length === 0 ? (
+                <p className="text-sm text-slate-500">No claims found.</p>
               ) : (
-                <p className="text-sm text-slate-500">Select a claim or load one by id to view details.</p>
+                <div className="space-y-2">
+                  {claims.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedClaimId(c.id);
+                        setSelectedClaim(null);
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:bg-slate-50"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="truncate text-sm font-semibold text-slate-800">
+                          {c.patientLastName || '—'}
+                        </p>
+                        <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                          {c.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        Member: {c.memberNumber} • Tx: {c.transactionNumber || '—'}
+                      </p>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      </Section>
 
-      <Section title="Submit claim" subtitle="Manual form. Required: patient names, member number, provider name, at least one diagnosis and line item.">
-        <ClaimForm
-          payload={submitPayload}
-          onChange={setSubmitPayload}
-          actionLabel="Submit claim"
-          onAction={submitClaim}
-          actionDisabled={!canSubmit}
-        />
-      </Section>
-
-      <Section title="Reverse claim" subtitle="Void a previously submitted claim by MediKredit transaction number (tx_nbr).">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <Label>Select claim to reverse</Label>
-            <select
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
-              value={reversalTx}
-              onChange={e => {
-                const tx = e.target.value;
-                setReversalTx(tx);
-                const match = claims?.find(c => c.transactionNumber === tx);
-                if (match) {
-                  setReversalPayload(prev => ({
-                    ...prev,
-                    patient: {
-                      ...prev.patient,
-                      firstName: match.patientFirstName || prev.patient.firstName,
-                      lastName: match.patientLastName || prev.patient.lastName,
-                      memberNumber: match.memberNumber || prev.patient.memberNumber,
-                    },
-                  }));
-                }
-              }}
-            >
-              <option value="">Select a claim…</option>
-              {claims?.map(c =>
-                c.transactionNumber ? (
-                  <option key={c.id} value={c.transactionNumber}>
-                    {c.transactionNumber} — {c.patientLastName || ''} ({c.memberNumber})
-                  </option>
-                ) : null
-              )}
-            </select>
+            <div className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Fetch by ID</p>
+              <div className="flex gap-2">
+                <Input
+                  value={selectedClaimId}
+                  onChange={e => setSelectedClaimId(e.target.value)}
+                  placeholder="Claim UUID"
+                />
+                <SmallButton onClick={loadClaimDetail} disabled={detailLoading}>
+                  {detailLoading ? <RefreshCw size={16} className="animate-spin" /> : null}
+                  Load
+                </SmallButton>
+              </div>
+              <div className="mt-3">
+                {selectedClaim ? (
+                  <pre className="max-h-[340px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                    {JSON.stringify(selectedClaim, null, 2)}
+                  </pre>
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    Select a claim or load one by id to view details.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
-          <div>
-            <Label>Transaction number</Label>
-            <Input
-              value={reversalTx}
-              onChange={e => setReversalTx(e.target.value)}
-              placeholder="e.g. TX123456789"
+        )}
+
+        {subTab === 'submit' && (
+          <div className="mt-1">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Submit new claim
+            </p>
+            <ClaimForm
+              payload={submitPayload}
+              onChange={setSubmitPayload}
+              actionLabel="Submit claim"
+              onAction={submitClaim}
+              actionDisabled={!canSubmit}
             />
           </div>
-        </div>
-        <div className="mt-4">
-          <ClaimForm
-            payload={reversalPayload}
-            onChange={setReversalPayload}
-            actionLabel="Reverse claim"
-            onAction={reverseClaim}
-            actionVariant="danger"
-          />
-        </div>
+        )}
+
+        {subTab === 'reverse' && (
+          <div className="mt-1 space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="md:col-span-2">
+                <Label>Select claim to reverse</Label>
+                <select
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-rose-500 focus:ring-2 focus:ring-rose-100"
+                  value={reversalTx}
+                  onChange={e => {
+                    const tx = e.target.value;
+                    setReversalTx(tx);
+                    const match = claims?.find(c => c.transactionNumber === tx);
+                    if (match) {
+                      setReversalPayload(prev => ({
+                        ...prev,
+                        patient: {
+                          ...prev.patient,
+                          firstName: match.patientFirstName || prev.patient.firstName,
+                          lastName: match.patientLastName || prev.patient.lastName,
+                          memberNumber: match.memberNumber || prev.patient.memberNumber,
+                        },
+                      }));
+                    }
+                  }}
+                >
+                  <option value="">Select a claim…</option>
+                  {claims?.map(c =>
+                    c.transactionNumber ? (
+                      <option key={c.id} value={c.transactionNumber}>
+                        {c.transactionNumber} — {c.patientLastName || ''} ({c.memberNumber})
+                      </option>
+                    ) : null
+                  )}
+                </select>
+              </div>
+              <div>
+                <Label>Transaction number</Label>
+                <Input
+                  value={reversalTx}
+                  onChange={e => setReversalTx(e.target.value)}
+                  placeholder="e.g. TX123456789"
+                />
+              </div>
+            </div>
+            <ClaimForm
+              payload={reversalPayload}
+              onChange={setReversalPayload}
+              actionLabel="Reverse claim"
+              onAction={reverseClaim}
+              actionVariant="danger"
+            />
+          </div>
+        )}
       </Section>
     </div>
   );
