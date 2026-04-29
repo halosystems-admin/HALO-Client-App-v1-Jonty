@@ -1,4 +1,5 @@
-export const BILLING_API_BASE = 'https://medikredit-integration-dev-17803b194e77.herokuapp.com';
+const BILLING_API_BASE = 'https://medikredit-integration-dev-17803b194e77.herokuapp.com';
+const BILLING_API_KEY = import.meta.env.VITE_MEDIKREDIT_API_KEY as string | undefined;
 
 export class BillingApiError extends Error {
   status: number;
@@ -22,6 +23,7 @@ async function billingRequest<T = unknown>(path: string, options: RequestInit = 
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        ...(BILLING_API_KEY ? { 'x-api-key': BILLING_API_KEY } : {}),
         ...(options.headers || {}),
       },
     });
@@ -104,6 +106,7 @@ export interface BillingPatientPayload {
   lastName: string;
   dateOfBirth: string;
   initials?: string;
+  statusIndicator?: string;
   dependantCode?: string;
   idNumber?: string;
   memberNumber: string;
@@ -132,11 +135,18 @@ export interface BillingClaimLineItemPayload {
   serviceDate: string;
 }
 
+export interface BillingClaimOtherPayload {
+  wcaNumber?: string;
+  insuranceReferenceNumber?: string;
+  dateOfAccident?: string;
+}
+
 export interface BillingClaimCreatePayload {
   patient: BillingPatientPayload;
   provider: BillingProviderPayload;
   diagnoses: BillingDiagnosisPayload[];
   lineItems: BillingClaimLineItemPayload[];
+  other?: BillingClaimOtherPayload;
 }
 
 export interface BillingClaimReversePayload extends BillingClaimCreatePayload {
@@ -152,7 +162,8 @@ export interface ClaimResultDto {
 }
 
 export interface BillingEligibilityPayload {
-  memberNumber: string;
+  requestType?: 'normal' | 'family' | 'auth' | 'exclusion' | 'auth_and_exclusion' | string;
+  memberNumber?: string;
   schemeCode?: string;
   planCode?: string;
   dependantCode?: string;

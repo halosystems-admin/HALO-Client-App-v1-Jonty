@@ -588,6 +588,14 @@ function ClaimForm({
           <Input value={payload.patient.initials || ''} onChange={e => updatePatient({ initials: e.target.value })} />
         </div>
         <div>
+          <Label>Status indicator</Label>
+          <Input
+            value={payload.patient.statusIndicator || ''}
+            onChange={e => updatePatient({ statusIndicator: e.target.value })}
+            placeholder="e.g. A"
+          />
+        </div>
+        <div>
           <Label>Member number</Label>
           <Input value={payload.patient.memberNumber} onChange={e => updatePatient({ memberNumber: e.target.value })} />
         </div>
@@ -665,6 +673,51 @@ function ClaimForm({
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-3">
+        <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Other (COID / contextual)</p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div>
+            <Label>WCA number</Label>
+            <Input
+              value={payload.other?.wcaNumber || ''}
+              onChange={e =>
+                onChange({
+                  ...payload,
+                  other: { ...(payload.other || {}), wcaNumber: e.target.value },
+                })
+              }
+              placeholder="e.g. W/1361779/2"
+            />
+          </div>
+          <div>
+            <Label>Insurance reference</Label>
+            <Input
+              value={payload.other?.insuranceReferenceNumber || ''}
+              onChange={e =>
+                onChange({
+                  ...payload,
+                  other: { ...(payload.other || {}), insuranceReferenceNumber: e.target.value },
+                })
+              }
+              placeholder="Employer/insurer ref"
+            />
+          </div>
+          <div>
+            <Label>Date of accident</Label>
+            <Input
+              type="date"
+              value={payload.other?.dateOfAccident || ''}
+              onChange={e =>
+                onChange({
+                  ...payload,
+                  other: { ...(payload.other || {}), dateOfAccident: e.target.value },
+                })
+              }
+            />
+          </div>
         </div>
       </div>
 
@@ -746,6 +799,7 @@ function ClaimForm({
 
 function EligibilityTab({ onToast }: { onToast: ToastFn }) {
   const [payload, setPayload] = useState<BillingEligibilityPayload>({
+    requestType: 'normal',
     memberNumber: '',
     schemeCode: '',
     planCode: '',
@@ -770,6 +824,7 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
     };
 
     return {
+      requestType: compact(p.requestType) || 'normal',
       memberNumber: p.memberNumber.trim(),
       serviceDate: p.serviceDate,
       // These are often required by upstream even if our OpenAPI marks them optional.
@@ -818,6 +873,20 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
       </SmallButton>
     }>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div>
+          <Label>Request type</Label>
+          <select
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+            value={payload.requestType || 'normal'}
+            onChange={e => set({ requestType: e.target.value as BillingEligibilityPayload['requestType'] })}
+          >
+            <option value="normal">Normal</option>
+            <option value="family">Family</option>
+            <option value="auth">Auth</option>
+            <option value="exclusion">Exclusion</option>
+            <option value="auth_and_exclusion">Auth + Exclusion</option>
+          </select>
+        </div>
         <div>
           <Label>Member number *</Label>
           <Input value={payload.memberNumber} onChange={e => set({ memberNumber: e.target.value })} />
