@@ -825,7 +825,7 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
 
     return {
       requestType: compact(p.requestType) || 'normal',
-      memberNumber: p.memberNumber.trim(),
+      memberNumber: compact(p.memberNumber),
       serviceDate: p.serviceDate,
       // These are often required by upstream even if our OpenAPI marks them optional.
       schemeCode: compact(p.schemeCode)?.toUpperCase(),
@@ -843,7 +843,7 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
   };
 
   const check = async () => {
-    if (!payload.memberNumber.trim() || !payload.serviceDate || !payload.schemeCode?.trim() || !payload.planCode?.trim()) {
+    if (!(payload.memberNumber ?? '').trim() || !payload.serviceDate || !payload.schemeCode?.trim() || !payload.planCode?.trim()) {
       onToast('Member number, service date, scheme code, and plan code are required.', 'error');
       return;
     }
