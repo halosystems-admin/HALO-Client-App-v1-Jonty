@@ -1,24 +1,19 @@
 import React, { useMemo, useState } from 'react';
-import { Activity, BadgeCheck, FileText, RefreshCw } from 'lucide-react';
+import { BadgeCheck, FileText, RefreshCw } from 'lucide-react';
 import {
   billingGetClaims,
   billingGetClaimById,
-  billingGetEraById,
-  billingGetErasByTransactionNumber,
-  billingIngestEra,
   billingCheckEligibility,
   billingSubmitClaim,
   billingReverseClaim,
   type BillingClaimCreatePayload,
   type BillingEligibilityPayload,
-  type BillingEraIngestPayload,
   type StoredClaimRecord,
-  type StoredEraRecord,
 } from '../services/billingApi';
 
 type ToastFn = (message: string, type?: 'success' | 'error' | 'info') => void;
 
-type BillingTab = 'claims' | 'eligibility' | 'era';
+type BillingTab = 'claims' | 'eligibility';
 type ClaimsSubTab = 'list' | 'submit' | 'reverse';
 
 export function BillingPage({ onToast }: { onToast: ToastFn }) {
@@ -46,19 +41,14 @@ export function BillingPage({ onToast }: { onToast: ToastFn }) {
               >
                 Eligibility
               </TabButton>
-              <TabButton active={tab === 'era'} onClick={() => setTab('era')} icon={<Activity size={16} />}>
-                ERA
-              </TabButton>
             </div>
           </div>
         </header>
 
         {tab === 'claims' ? (
           <ClaimsTab onToast={onToast} />
-        ) : tab === 'eligibility' ? (
-          <EligibilityTab onToast={onToast} />
         ) : (
-          <EraTab onToast={onToast} />
+          <EligibilityTab onToast={onToast} />
         )}
       </div>
     </div>
@@ -958,175 +948,3 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
     </Section>
   );
 }
-
-function EraTab({ onToast }: { onToast: ToastFn }) {
-  const [ingest, setIngest] = useState<BillingEraIngestPayload>({ content: '', sourceFileName: '' });
-  const [ingestResult, setIngestResult] = useState<StoredEraRecord[] | null>(null);
-  const [ingestLoading, setIngestLoading] = useState(false);
-
-  const [tx, setTx] = useState('');
-  const [eras, setEras] = useState<StoredEraRecord[] | null>(null);
-  const [erasLoading, setErasLoading] = useState(false);
-
-  const [eraId, setEraId] = useState('');
-  const [eraDetail, setEraDetail] = useState<StoredEraRecord | null>(null);
-  const [eraDetailLoading, setEraDetailLoading] = useState(false);
-
-  const doIngest = async () => {
-    if (!ingest.content.trim()) {
-      onToast('ERA content is required.', 'error');
-      return;
-    }
-    setIngestLoading(true);
-    setIngestResult(null);
-    try {
-      const res = await billingIngestEra({ content: ingest.content, sourceFileName: ingest.sourceFileName || undefined });
-      setIngestResult(res);
-      onToast(`Ingested ${res.length} ERA record(s).`, 'success');
-    } catch (e) {
-      onToast(e instanceof Error ? e.message : 'ERA ingest failed.', 'error');
-    } finally {
-      setIngestLoading(false);
-    }
-  };
-
-  const searchByTx = async () => {
-    setErasLoading(true);
-    setEras(null);
-    try {
-      const res = await billingGetErasByTransactionNumber(tx.trim() || undefined);
-      setEras(res);
-      onToast(`Loaded ${res.length} ERA record(s).`, 'success');
-    } catch (e) {
-      onToast(e instanceof Error ? e.message : 'Failed to load ERAs.', 'error');
-    } finally {
-      setErasLoading(false);
-    }
-  };
-
-  const loadEraDetail = async () => {
-    if (!eraId.trim()) return;
-    setEraDetailLoading(true);
-    setEraDetail(null);
-    try {
-      const res = await billingGetEraById(eraId.trim());
-      setEraDetail(res);
-      onToast('ERA loaded.', 'success');
-    } catch (e) {
-      onToast(e instanceof Error ? e.message : 'Failed to load ERA.', 'error');
-    } finally {
-      setEraDetailLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <Section
-        title="ERA ingest"
-        subtitle="Paste raw ERA content (pipe-delimited or XML) and ingest/reconcile."
-        right={
-          <SmallButton onClick={doIngest} disabled={ingestLoading}>
-            {ingestLoading ? <RefreshCw size={16} className="animate-spin" /> : null}
-            Ingest
-          </SmallButton>
-        }
-      >
-        <div className="grid grid-cols-1 gap-3">
-          <div>
-            <Label>Source filename (optional)</Label>
-            <Input value={ingest.sourceFileName || ''} onChange={e => setIngest(prev => ({ ...prev, sourceFileName: e.target.value }))} />
-          </div>
-          <div>
-            <Label>ERA content *</Label>
-            <TextArea
-              rows={8}
-              value={ingest.content}
-              onChange={e => setIngest(prev => ({ ...prev, content: e.target.value }))}
-              placeholder="01|...\n02|...\n99|... or XML payload"
-            />
-          </div>
-        </div>
-        <div className="mt-4">
-          {ingestResult ? (
-            <pre className="max-h-[360px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-              {JSON.stringify(ingestResult, null, 2)}
-            </pre>
-          ) : (
-            <p className="text-sm text-slate-500">Ingest results will appear here.</p>
-          )}
-        </div>
-      </Section>
-
-      <Section
-        title="ERA search"
-        subtitle="Find ERAs by MediKredit transaction number (tx_nbr). Leave blank to list all."
-        right={
-          <SmallButton onClick={searchByTx} disabled={erasLoading}>
-            {erasLoading ? <RefreshCw size={16} className="animate-spin" /> : null}
-            Search
-          </SmallButton>
-        }
-      >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <Label>Transaction number</Label>
-            <Input value={tx} onChange={e => setTx(e.target.value)} placeholder="e.g. TX987654321" />
-          </div>
-        </div>
-        <div className="mt-4">
-          {eras ? (
-            eras.length ? (
-              <div className="space-y-2">
-                {eras.map(e => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => {
-                      setEraId(e.id);
-                      setEraDetail(null);
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:bg-slate-50"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-semibold text-slate-800">{e.transactionNumber}</p>
-                      <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                        {e.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-slate-500">
-                      Paid: {formatCents(e.totalPaidCents ?? null)} • Recon: {e.reconciliationStatus}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">No ERAs found.</p>
-            )
-          ) : (
-            <p className="text-sm text-slate-500">Run a search to load ERAs.</p>
-          )}
-        </div>
-      </Section>
-
-      <Section title="Fetch ERA by ID" subtitle="Load a persisted ERA record by internal UUID.">
-        <div className="flex gap-2">
-          <Input value={eraId} onChange={e => setEraId(e.target.value)} placeholder="ERA UUID" />
-          <SmallButton onClick={loadEraDetail} disabled={eraDetailLoading}>
-            {eraDetailLoading ? <RefreshCw size={16} className="animate-spin" /> : null}
-            Load
-          </SmallButton>
-        </div>
-        <div className="mt-3">
-          {eraDetail ? (
-            <pre className="max-h-[360px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-              {JSON.stringify(eraDetail, null, 2)}
-            </pre>
-          ) : (
-            <p className="text-sm text-slate-500">Select an ERA or load one by id to view details.</p>
-          )}
-        </div>
-      </Section>
-    </div>
-  );
-}
-
