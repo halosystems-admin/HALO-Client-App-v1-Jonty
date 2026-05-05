@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { BadgeCheck, FileText, RefreshCw } from 'lucide-react';
 import {
   billingGetClaims,
@@ -278,6 +278,8 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
   const [selectedClaimId, setSelectedClaimId] = useState<string>('');
   const [selectedClaim, setSelectedClaim] = useState<StoredClaimRecord | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const claimDetailReqIdRef = useRef(0);
+  const pollTimerRef = useRef<number | null>(null);
 
   const [submitPayload, setSubmitPayload] = useState<BillingClaimCreatePayload>(() => {
     const saved = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
@@ -304,7 +306,6 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
     try {
       const data = await billingGetClaims({ limit: 50, offset: 0 });
       setClaims(data);
-      onToast(`Loaded ${data.length} claim(s).`, 'success');
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'Failed to load claims.', 'error');
     } finally {
@@ -312,17 +313,42 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
     }
   };
 
-  const loadClaimDetail = async () => {
-    if (!selectedClaimId.trim()) return;
+  // Auto-refresh claims in the background (keeps list + reverse dropdown up to date).
+  React.useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      await refreshClaims();
+    };
+
+    tick();
+
+    if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+    pollTimerRef.current = window.setInterval(() => {
+      tick().catch(() => {});
+    }, 12_000);
+
+    return () => {
+      cancelled = true;
+      if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    };
+  }, []);
+
+  const selectAndLoadClaim = async (id: string) => {
+    setSelectedClaimId(id);
+    setSelectedClaim(null);
     setDetailLoading(true);
+    const reqId = ++claimDetailReqIdRef.current;
     try {
-      const data = await billingGetClaimById(selectedClaimId.trim());
+      const data = await billingGetClaimById(id.trim());
+      if (reqId !== claimDetailReqIdRef.current) return;
       setSelectedClaim(data);
-      onToast('Claim loaded.', 'success');
     } catch (e) {
+      if (reqId !== claimDetailReqIdRef.current) return;
       onToast(e instanceof Error ? e.message : 'Failed to load claim.', 'error');
     } finally {
-      setDetailLoading(false);
+      if (reqId === claimDetailReqIdRef.current) setDetailLoading(false);
     }
   };
 
@@ -399,10 +425,12 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                 Reverse
               </button>
             </div>
-            <SmallButton onClick={refreshClaims} disabled={claimsLoading} variant="secondary">
-              <RefreshCw size={16} className={claimsLoading ? 'animate-spin' : ''} />
-              Refresh
-            </SmallButton>
+            {claimsLoading ? (
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500">
+                <RefreshCw size={14} className="animate-spin" />
+                Updating…
+              </span>
+            ) : null}
           </div>
         }
       >
@@ -421,8 +449,7 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                       key={c.id}
                       type="button"
                       onClick={() => {
-                        setSelectedClaimId(c.id);
-                        setSelectedClaim(null);
+                        selectAndLoadClaim(c.id);
                       }}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:bg-slate-50"
                     >
@@ -464,18 +491,16 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-3">
-              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Fetch by ID</p>
-              <div className="flex gap-2">
-                <Input
-                  value={selectedClaimId}
-                  onChange={e => setSelectedClaimId(e.target.value)}
-                  placeholder="Claim UUID"
-                />
-                <SmallButton onClick={loadClaimDetail} disabled={detailLoading}>
-                  {detailLoading ? <RefreshCw size={16} className="animate-spin" /> : null}
-                  Load
-                </SmallButton>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Claim details</p>
+                {detailLoading ? (
+                  <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
+                    <RefreshCw size={14} className="animate-spin" />
+                    Loading…
+                  </span>
+                ) : null}
               </div>
+
               <div className="mt-3">
                 {(() => {
                   const savedByTx = readJson<Record<string, BillingClaimCreatePayload>>(LS_SUBMITTED_BY_TX) || {};
@@ -491,7 +516,10 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                     <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
                       <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Financial summary</p>
                       <div className="mt-1 grid grid-cols-1 gap-1 text-sm font-semibold text-emerald-900 md:grid-cols-3">
-                        <div>Total claimed: {backendClaimed !== null ? formatMoneyOrDash(backendClaimed) : formatCents(totalCents ?? 0)}</div>
+                        <div>
+                          Total claimed:{' '}
+                          {backendClaimed !== null ? formatMoneyOrDash(backendClaimed) : formatCents(totalCents ?? 0)}
+                        </div>
                         <div>Total paid: {formatMoneyOrDash(backendPaid)}</div>
                         <div>Variance: {formatMoneyOrDash(backendVariance)}</div>
                       </div>
@@ -503,6 +531,7 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                     </div>
                   );
                 })()}
+
                 {selectedClaim ? (
                   <>
                     {renderLineItemsSummary(selectedClaim)}
@@ -511,9 +540,7 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                     </pre>
                   </>
                 ) : (
-                  <p className="text-sm text-slate-500">
-                    Select a claim or load one by id to view details.
-                  </p>
+                  <p className="text-sm text-slate-500">Click any claim to view details.</p>
                 )}
               </div>
             </div>
