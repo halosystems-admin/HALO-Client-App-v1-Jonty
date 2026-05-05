@@ -16,6 +16,67 @@ type ToastFn = (message: string, type?: 'success' | 'error' | 'info') => void;
 type BillingTab = 'claims' | 'eligibility';
 type ClaimsSubTab = 'list' | 'submit' | 'reverse';
 
+const LS_LAST_SUBMIT = 'halo_billing_last_submit_payload_v1';
+const LS_LAST_ELIGIBILITY = 'halo_billing_last_eligibility_payload_v1';
+const LS_SUBMITTED_BY_TX = 'halo_billing_submitted_by_tx_v1';
+
+function readJson<T>(key: string): T | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+function getEmptyClaimPayload(): BillingClaimCreatePayload {
+  return {
+    patient: {
+      firstName: '',
+      lastName: '',
+      dateOfBirth: '',
+      initials: '',
+      statusIndicator: '',
+      dependantCode: '',
+      idNumber: '',
+      memberNumber: '',
+      planCode: '',
+    },
+    provider: {
+      name: '',
+      practiceNumber: '',
+      hpcNumber: '',
+      bhfNumber: '',
+      groupPracticeNumber: '',
+    },
+    diagnoses: [{ code: '', description: '' }],
+    lineItems: [
+      {
+        procedureCode: '',
+        description: '',
+        quantity: 1,
+        unitPriceCents: 0,
+        totalPriceCents: 0,
+        serviceDate: '',
+      },
+    ],
+    other: {
+      wcaNumber: '',
+      insuranceReferenceNumber: '',
+      dateOfAccident: '',
+    },
+  };
+}
+
 export function BillingPage({ onToast }: { onToast: ToastFn }) {
   const [tab, setTab] = useState<BillingTab>('claims');
 
@@ -168,6 +229,12 @@ function formatCents(cents?: number | null): string {
   return rands.toLocaleString(undefined, { style: 'currency', currency: 'ZAR' });
 }
 
+function sumClaimTotalCents(payload?: BillingClaimCreatePayload | null): number | null {
+  if (!payload?.lineItems?.length) return null;
+  const total = payload.lineItems.reduce((acc, li) => acc + (Number(li.totalPriceCents) || 0), 0);
+  return Number.isFinite(total) ? total : null;
+}
+
 function ClaimsTab({ onToast }: { onToast: ToastFn }) {
   const [subTab, setSubTab] = useState<ClaimsSubTab>('list');
   const [claims, setClaims] = useState<StoredClaimRecord[] | null>(null);
@@ -176,67 +243,15 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
   const [selectedClaim, setSelectedClaim] = useState<StoredClaimRecord | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const [submitPayload, setSubmitPayload] = useState<BillingClaimCreatePayload>({
-    patient: {
-      firstName: '',
-      lastName: '',
-      dateOfBirth: '',
-      initials: '',
-      dependantCode: '',
-      idNumber: '',
-      memberNumber: '',
-      planCode: '',
-    },
-    provider: {
-      name: '',
-      practiceNumber: '',
-      hpcNumber: '',
-      bhfNumber: '',
-      groupPracticeNumber: '',
-    },
-    diagnoses: [{ code: '', description: '' }],
-    lineItems: [
-      {
-        procedureCode: '',
-        description: '',
-        quantity: 1,
-        unitPriceCents: 0,
-        totalPriceCents: 0,
-        serviceDate: '',
-      },
-    ],
+  const [submitPayload, setSubmitPayload] = useState<BillingClaimCreatePayload>(() => {
+    const saved = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
+    return saved ?? getEmptyClaimPayload();
   });
 
   const [reversalTx, setReversalTx] = useState('');
-  const [reversalPayload, setReversalPayload] = useState<BillingClaimCreatePayload>({
-    patient: {
-      firstName: '',
-      lastName: '',
-      dateOfBirth: '',
-      initials: '',
-      dependantCode: '',
-      idNumber: '',
-      memberNumber: '',
-      planCode: '',
-    },
-    provider: {
-      name: '',
-      practiceNumber: '',
-      hpcNumber: '',
-      bhfNumber: '',
-      groupPracticeNumber: '',
-    },
-    diagnoses: [{ code: '', description: '' }],
-    lineItems: [
-      {
-        procedureCode: '',
-        description: '',
-        quantity: 1,
-        unitPriceCents: 0,
-        totalPriceCents: 0,
-        serviceDate: '',
-      },
-    ],
+  const [reversalPayload, setReversalPayload] = useState<BillingClaimCreatePayload>(() => {
+    const saved = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
+    return saved ?? getEmptyClaimPayload();
   });
 
   const canSubmit = useMemo(() => {
@@ -279,6 +294,13 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
     try {
       const result = await billingSubmitClaim(submitPayload);
       onToast(`Claim ${result.status}.`, result.status === 'accepted' ? 'success' : 'info');
+      // Persist for fast re-testing
+      writeJson(LS_LAST_SUBMIT, submitPayload);
+      if (result.transactionNumber) {
+        const existing = readJson<Record<string, BillingClaimCreatePayload>>(LS_SUBMITTED_BY_TX) || {};
+        existing[result.transactionNumber] = submitPayload;
+        writeJson(LS_SUBMITTED_BY_TX, existing);
+      }
       await refreshClaims();
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'Failed to submit claim.', 'error');
@@ -376,9 +398,17 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                           {c.status}
                         </span>
                       </div>
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        Member: {c.memberNumber} • Tx: {c.transactionNumber || '—'}
-                      </p>
+                      {(() => {
+                        const savedByTx = readJson<Record<string, BillingClaimCreatePayload>>(LS_SUBMITTED_BY_TX) || {};
+                        const savedPayload = c.transactionNumber ? savedByTx[c.transactionNumber] : null;
+                        const totalCents = sumClaimTotalCents(savedPayload);
+                        const totalLabel = totalCents === null ? '—' : formatCents(totalCents);
+                        return (
+                          <p className="mt-1 truncate text-xs text-slate-500">
+                            Member: {c.memberNumber} • Tx: {c.transactionNumber || '—'} • Total: {totalLabel}
+                          </p>
+                        );
+                      })()}
                     </button>
                   ))}
                 </div>
@@ -399,6 +429,24 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                 </SmallButton>
               </div>
               <div className="mt-3">
+                {(() => {
+                  const savedByTx = readJson<Record<string, BillingClaimCreatePayload>>(LS_SUBMITTED_BY_TX) || {};
+                  const tx = selectedClaim?.transactionNumber;
+                  const savedPayload = tx ? savedByTx[tx] : null;
+                  const totalCents = sumClaimTotalCents(savedPayload);
+                  if (totalCents === null) return null;
+                  return (
+                    <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
+                      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Financial summary</p>
+                      <p className="mt-0.5 text-sm font-semibold text-emerald-900">
+                        Total claimed: {formatCents(totalCents)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-emerald-700">
+                        Derived from the locally-saved submitted claim payload (line item totals).
+                      </p>
+                    </div>
+                  );
+                })()}
                 {selectedClaim ? (
                   <pre className="max-h-[340px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                     {JSON.stringify(selectedClaim, null, 2)}
@@ -418,6 +466,31 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
               Submit new claim
             </p>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <SmallButton
+                onClick={() => {
+                  const saved = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
+                  if (saved) {
+                    setSubmitPayload(saved);
+                    onToast('Autofilled from last submitted claim.', 'success');
+                  } else {
+                    onToast('No saved claim found yet. Submit a claim once to enable autofill.', 'info');
+                  }
+                }}
+                variant="secondary"
+              >
+                Use last claim
+              </SmallButton>
+              <SmallButton
+                onClick={() => {
+                  setSubmitPayload(getEmptyClaimPayload());
+                  onToast('Cleared claim form.', 'info');
+                }}
+                variant="secondary"
+              >
+                Clear
+              </SmallButton>
+            </div>
             <ClaimForm
               payload={submitPayload}
               onChange={setSubmitPayload}
@@ -430,6 +503,32 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
 
         {subTab === 'reverse' && (
           <div className="mt-1 space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <SmallButton
+                onClick={() => {
+                  // Use the current submit form as the reversal base
+                  setReversalPayload(submitPayload);
+                  onToast('Copied reversal details from the submit form.', 'success');
+                }}
+                variant="secondary"
+              >
+                Copy from submit form
+              </SmallButton>
+              <SmallButton
+                onClick={() => {
+                  const saved = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
+                  if (saved) {
+                    setReversalPayload(saved);
+                    onToast('Autofilled reversal details from last submitted claim.', 'success');
+                  } else {
+                    onToast('No saved claim found yet.', 'info');
+                  }
+                }}
+                variant="secondary"
+              >
+                Use last claim
+              </SmallButton>
+            </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="md:col-span-2">
                 <Label>Select claim to reverse</Label>
@@ -439,6 +538,13 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                   onChange={e => {
                     const tx = e.target.value;
                     setReversalTx(tx);
+                    const savedByTx = readJson<Record<string, BillingClaimCreatePayload>>(LS_SUBMITTED_BY_TX) || {};
+                    const savedPayload = tx ? savedByTx[tx] : undefined;
+                    if (savedPayload) {
+                      setReversalPayload(savedPayload);
+                      onToast('Filled reversal details from the originally submitted claim.', 'success');
+                      return;
+                    }
                     const match = claims?.find(c => c.transactionNumber === tx);
                     if (match) {
                       setReversalPayload(prev => ({
@@ -843,6 +949,7 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
       const res = await billingCheckEligibility(compactEligibilityPayload(payload));
       setResult(res);
       onToast(`Eligibility: ${res.status}.`, res.status === 'eligible' ? 'success' : 'info');
+      writeJson(LS_LAST_ELIGIBILITY, payload);
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'Eligibility check failed.', 'error');
     } finally {
@@ -862,6 +969,49 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
         Check
       </SmallButton>
     }>
+      <div className="mb-3 flex flex-wrap gap-2">
+        <SmallButton
+          onClick={() => {
+            const saved = readJson<BillingEligibilityPayload>(LS_LAST_ELIGIBILITY);
+            if (saved) {
+              setPayload(saved);
+              onToast('Autofilled eligibility form from last run.', 'success');
+            } else {
+              onToast('No saved eligibility check yet.', 'info');
+            }
+          }}
+          variant="secondary"
+        >
+          Use last eligibility
+        </SmallButton>
+        <SmallButton
+          onClick={() => {
+            const savedClaim = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
+            if (savedClaim) {
+              setPayload(prev => ({
+                ...prev,
+                memberNumber: savedClaim.patient.memberNumber || prev.memberNumber,
+                dependantCode: savedClaim.patient.dependantCode || prev.dependantCode,
+                patientDateOfBirth: savedClaim.patient.dateOfBirth || prev.patientDateOfBirth,
+                patientIdNumber: savedClaim.patient.idNumber || prev.patientIdNumber,
+                patientFirstName: savedClaim.patient.firstName || prev.patientFirstName,
+                patientLastName: savedClaim.patient.lastName || prev.patientLastName,
+                patientInitials: savedClaim.patient.initials || prev.patientInitials,
+                planCode: savedClaim.patient.planCode || prev.planCode,
+                providerPracticeNumber: savedClaim.provider.practiceNumber || prev.providerPracticeNumber,
+                bhfNumber: savedClaim.provider.bhfNumber || prev.bhfNumber,
+                groupPracticeNumber: savedClaim.provider.groupPracticeNumber || prev.groupPracticeNumber,
+              }));
+              onToast('Pulled patient/provider fields from last claim.', 'success');
+            } else {
+              onToast('No saved claim found yet.', 'info');
+            }
+          }}
+          variant="secondary"
+        >
+          Use last claim fields
+        </SmallButton>
+      </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
           <Label>Request type</Label>
