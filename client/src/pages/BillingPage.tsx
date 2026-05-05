@@ -430,8 +430,19 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                         <p className="truncate text-sm font-semibold text-slate-800">
                           {c.patientLastName || '—'}
                         </p>
-                        <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                          {c.status}
+                        <span
+                          className={`shrink-0 rounded-full border bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                            c.reversed
+                              ? 'border-rose-200 text-rose-700'
+                              : 'border-slate-200 text-slate-500'
+                          }`}
+                          title={
+                            c.reversed
+                              ? `Reversed${c.reversalStatus ? ` (${c.reversalStatus})` : ''}`
+                              : c.status
+                          }
+                        >
+                          {c.reversed ? 'reversed' : c.status}
                         </span>
                       </div>
                       {(() => {
