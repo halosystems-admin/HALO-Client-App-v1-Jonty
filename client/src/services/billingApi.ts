@@ -92,11 +92,25 @@ export interface StoredClaimRecord {
   patientFirstName?: string;
   patientLastName?: string;
   dependantCode?: string;
+  /** Backend-provided quick summary of submitted line items (if enabled). */
+  lineItemsSummary?: Array<{
+    procedureCode: string;
+    description?: string;
+    quantity: number;
+    unitPriceCents: number;
+    totalPriceCents: number;
+    serviceDate: string;
+  }>;
   status: string;
   messages: string[];
   reversed: boolean;
   reversalStatus?: string;
   reversalMessages: string[];
+  /** When backend provides totals (may be absent in older versions) */
+  totalClaimedCents?: number;
+  totalPaidCents?: number;
+  varianceCents?: number;
+  totalLineItems?: number;
   createdAt: string;
   updatedAt: string;
 }

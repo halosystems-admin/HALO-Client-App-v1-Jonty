@@ -235,6 +235,42 @@ function sumClaimTotalCents(payload?: BillingClaimCreatePayload | null): number 
   return Number.isFinite(total) ? total : null;
 }
 
+function formatMoneyOrDash(cents?: number | null): string {
+  if (typeof cents !== 'number') return '—';
+  return formatCents(cents);
+}
+
+function renderLineItemsSummary(claim: StoredClaimRecord) {
+  const items = claim.lineItemsSummary || [];
+  if (!items.length) return null;
+
+  return (
+    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Line items summary</p>
+      <div className="mt-2 space-y-2">
+        {items.map((li, idx) => (
+          <div
+            key={`${li.procedureCode}-${li.serviceDate}-${idx}`}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="truncate text-sm font-semibold text-slate-800">
+                {li.procedureCode} {li.description ? `— ${li.description}` : ''}
+              </p>
+              <span className="shrink-0 text-xs font-semibold text-slate-600">
+                {formatCents(li.totalPriceCents)}
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Qty {li.quantity} • Unit {formatCents(li.unitPriceCents)} • {li.serviceDate}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ClaimsTab({ onToast }: { onToast: ToastFn }) {
   const [subTab, setSubTab] = useState<ClaimsSubTab>('list');
   const [claims, setClaims] = useState<StoredClaimRecord[] | null>(null);
@@ -402,10 +438,11 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                         const savedByTx = readJson<Record<string, BillingClaimCreatePayload>>(LS_SUBMITTED_BY_TX) || {};
                         const savedPayload = c.transactionNumber ? savedByTx[c.transactionNumber] : null;
                         const totalCents = sumClaimTotalCents(savedPayload);
-                        const totalLabel = totalCents === null ? '—' : formatCents(totalCents);
+                        const backendTotal = typeof c.totalClaimedCents === 'number' ? c.totalClaimedCents : null;
+                        const totalLabel = backendTotal !== null ? formatMoneyOrDash(backendTotal) : totalCents === null ? '—' : formatCents(totalCents);
                         return (
                           <p className="mt-1 truncate text-xs text-slate-500">
-                            Member: {c.memberNumber} • Tx: {c.transactionNumber || '—'} • Total: {totalLabel}
+                            Member: {c.memberNumber} • Tx: {c.transactionNumber || '—'} • Items: {c.totalLineItems ?? c.lineItemsSummary?.length ?? '—'} • Total: {totalLabel}
                           </p>
                         );
                       })()}
@@ -434,23 +471,34 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
                   const tx = selectedClaim?.transactionNumber;
                   const savedPayload = tx ? savedByTx[tx] : null;
                   const totalCents = sumClaimTotalCents(savedPayload);
-                  if (totalCents === null) return null;
+                  const backendClaimed = typeof selectedClaim?.totalClaimedCents === 'number' ? selectedClaim.totalClaimedCents : null;
+                  const backendPaid = typeof selectedClaim?.totalPaidCents === 'number' ? selectedClaim.totalPaidCents : null;
+                  const backendVariance = typeof selectedClaim?.varianceCents === 'number' ? selectedClaim.varianceCents : null;
+
+                  if (backendClaimed === null && totalCents === null) return null;
                   return (
                     <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
                       <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Financial summary</p>
-                      <p className="mt-0.5 text-sm font-semibold text-emerald-900">
-                        Total claimed: {formatCents(totalCents)}
-                      </p>
-                      <p className="mt-0.5 text-xs text-emerald-700">
-                        Derived from the locally-saved submitted claim payload (line item totals).
+                      <div className="mt-1 grid grid-cols-1 gap-1 text-sm font-semibold text-emerald-900 md:grid-cols-3">
+                        <div>Total claimed: {backendClaimed !== null ? formatMoneyOrDash(backendClaimed) : formatCents(totalCents ?? 0)}</div>
+                        <div>Total paid: {formatMoneyOrDash(backendPaid)}</div>
+                        <div>Variance: {formatMoneyOrDash(backendVariance)}</div>
+                      </div>
+                      <p className="mt-1 text-xs text-emerald-700">
+                        {backendClaimed !== null
+                          ? 'Provided by the billing API.'
+                          : 'Derived from the locally-saved submitted claim payload (line item totals).'}
                       </p>
                     </div>
                   );
                 })()}
                 {selectedClaim ? (
-                  <pre className="max-h-[340px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                    {JSON.stringify(selectedClaim, null, 2)}
-                  </pre>
+                  <>
+                    {renderLineItemsSummary(selectedClaim)}
+                    <pre className="mt-3 max-h-[340px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                      {JSON.stringify(selectedClaim, null, 2)}
+                    </pre>
+                  </>
                 ) : (
                   <p className="text-sm text-slate-500">
                     Select a claim or load one by id to view details.
