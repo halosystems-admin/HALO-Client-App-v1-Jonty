@@ -322,6 +322,10 @@ function toInitials(firstName: string, lastName: string): string {
   return initials.replace(/[^A-Z]/g, '').slice(0, 5);
 }
 
+function toUpperOrEmpty(value: string | undefined | null): string {
+  return (value ?? '').toUpperCase();
+}
+
 function ClaimsTab({
   onToast,
   patient,
@@ -361,9 +365,13 @@ function ClaimsTab({
       ...base,
       patient: {
         ...base.patient,
-        firstName: name.firstName || base.patient.firstName,
-        lastName: name.lastName || base.patient.lastName,
+        firstName: toUpperOrEmpty(name.firstName) || base.patient.firstName,
+        lastName: toUpperOrEmpty(name.lastName) || base.patient.lastName,
         dateOfBirth: patient.dob && patient.dob !== 'Unknown' ? patient.dob : base.patient.dateOfBirth,
+        initials:
+          base.patient.initials?.trim()
+            ? base.patient.initials
+            : toInitials(name.firstName, name.lastName),
         idNumber: patient.idNumber || base.patient.idNumber,
         dependantCode: patient.dependantCode || base.patient.dependantCode,
         planCode: patient.planCode || patient.medicalAidPlan || base.patient.planCode,
@@ -1211,9 +1219,11 @@ function EligibilityTab({
       dependantCode: patient.dependantCode || base.dependantCode,
       patientDateOfBirth: patient.dob && patient.dob !== 'Unknown' ? patient.dob : base.patientDateOfBirth,
       patientIdNumber: patient.idNumber || base.patientIdNumber,
-      patientFirstName: name.firstName || base.patientFirstName,
-      patientLastName: name.lastName || base.patientLastName,
-      patientInitials: base.patientInitials?.trim() ? base.patientInitials : toInitials(name.firstName, name.lastName),
+      patientFirstName: toUpperOrEmpty(name.firstName) || base.patientFirstName,
+      patientLastName: toUpperOrEmpty(name.lastName) || base.patientLastName,
+      patientInitials: base.patientInitials?.trim()
+        ? toUpperOrEmpty(base.patientInitials)
+        : toInitials(name.firstName, name.lastName),
       planCode: patient.planCode || patient.medicalAidPlan || base.planCode,
       schemeCode: patient.schemeCode || userSettings?.billing?.schemeCode || base.schemeCode,
       providerPracticeNumber: providerDefaults?.practiceNumber || base.providerPracticeNumber,
