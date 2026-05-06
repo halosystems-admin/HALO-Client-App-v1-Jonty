@@ -12,7 +12,11 @@ import {
 } from '../services/billingApi';
 import type { Patient } from '../../../shared/types';
 import type { UserSettings } from '../../../shared/types';
-import { appendPatientBillingClaim, fetchPatientBillingClaims } from '../services/api';
+import {
+  appendPatientBillingClaim,
+  appendPatientBillingEligibility,
+  fetchPatientBillingClaims,
+} from '../services/api';
 
 type ToastFn = (message: string, type?: 'success' | 'error' | 'info') => void;
 
@@ -307,6 +311,15 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (parts.length <= 1) return { firstName: fullName.trim(), lastName: '' };
   return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
+}
+
+function toInitials(firstName: string, lastName: string): string {
+  const first = (firstName || '').trim();
+  const last = (lastName || '').trim();
+  const a = first ? first[0] : '';
+  const b = last ? last[0] : '';
+  const initials = `${a}${b}`.toUpperCase();
+  return initials.replace(/[^A-Z]/g, '').slice(0, 5);
 }
 
 function ClaimsTab({
@@ -1188,6 +1201,34 @@ function EligibilityTab({
   const [result, setResult] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
 
+  const applyPatientToEligibility = (base: BillingEligibilityPayload): BillingEligibilityPayload => {
+    if (!patient) return base;
+    const name = splitName(patient.name || '');
+    const providerDefaults = userSettings?.billing?.provider;
+    return {
+      ...base,
+      memberNumber: patient.memberNumber || patient.medicalAidNumber || base.memberNumber || '',
+      dependantCode: patient.dependantCode || base.dependantCode,
+      patientDateOfBirth: patient.dob && patient.dob !== 'Unknown' ? patient.dob : base.patientDateOfBirth,
+      patientIdNumber: patient.idNumber || base.patientIdNumber,
+      patientFirstName: name.firstName || base.patientFirstName,
+      patientLastName: name.lastName || base.patientLastName,
+      patientInitials: base.patientInitials?.trim() ? base.patientInitials : toInitials(name.firstName, name.lastName),
+      planCode: patient.planCode || patient.medicalAidPlan || base.planCode,
+      schemeCode: patient.schemeCode || userSettings?.billing?.schemeCode || base.schemeCode,
+      providerPracticeNumber: providerDefaults?.practiceNumber || base.providerPracticeNumber,
+      bhfNumber: providerDefaults?.bhfNumber || base.bhfNumber,
+      groupPracticeNumber: providerDefaults?.groupPracticeNumber || base.groupPracticeNumber,
+    };
+  };
+
+  // Auto-apply patient + provider defaults when patient changes.
+  React.useEffect(() => {
+    if (!patient?.id) return;
+    setPayload((prev) => applyPatientToEligibility(prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patient?.id]);
+
   const compactEligibilityPayload = (p: BillingEligibilityPayload): BillingEligibilityPayload => {
     const compact = (value: string | undefined) => {
       const v = (value ?? '').trim();
@@ -1224,10 +1265,29 @@ function EligibilityTab({
     setLoading(true);
     setResult(null);
     try {
-      const res = await billingCheckEligibility(compactEligibilityPayload(payload));
+      const requestPayload = compactEligibilityPayload(payload);
+      const res = await billingCheckEligibility(requestPayload);
       setResult(res);
       onToast(`Eligibility: ${res.status}.`, res.status === 'eligible' ? 'success' : 'info');
       writeJson(LS_LAST_ELIGIBILITY, payload);
+
+      if (patient?.id) {
+        try {
+          await appendPatientBillingEligibility(patient.id, {
+            savedAt: new Date().toISOString(),
+            patientId: patient.id,
+            eligibilityRequest: requestPayload,
+            eligibilityResult: res,
+          });
+        } catch (err) {
+          onToast(
+            err instanceof Error
+              ? err.message
+              : 'Eligibility was checked, but saving to the patient folder failed.',
+            'error'
+          );
+        }
+      }
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'Eligibility check failed.', 'error');
     } finally {
@@ -1254,18 +1314,7 @@ function EligibilityTab({
               onToast('Select a patient first to autofill.', 'info');
               return;
             }
-            const name = splitName(patient.name || '');
-            setPayload((prev) => ({
-              ...prev,
-              memberNumber: patient.memberNumber || patient.medicalAidNumber || prev.memberNumber,
-              dependantCode: patient.dependantCode || prev.dependantCode,
-              patientDateOfBirth: (patient.dob && patient.dob !== 'Unknown') ? patient.dob : prev.patientDateOfBirth,
-              patientIdNumber: patient.idNumber || prev.patientIdNumber,
-              patientFirstName: name.firstName || prev.patientFirstName,
-              patientLastName: name.lastName || prev.patientLastName,
-              planCode: patient.planCode || patient.medicalAidPlan || prev.planCode,
-              schemeCode: patient.schemeCode || userSettings?.billing?.schemeCode || prev.schemeCode,
-            }));
+            setPayload((prev) => applyPatientToEligibility(prev));
             onToast('Autofilled eligibility from patient billing fields.', 'success');
           }}
           variant="secondary"

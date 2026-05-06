@@ -736,6 +736,21 @@ export const appendPatientBillingClaim = (patientId: string, record: unknown) =>
     body: JSON.stringify(record),
   });
 
+// --- BILLING ELIGIBILITY (per patient, stored in Drive) ---
+export const fetchPatientBillingEligibility = (patientId: string) =>
+  request<{ checks: unknown[] }>(
+    `/api/drive/patients/${encodeURIComponent(patientId)}/billing-eligibility`
+  );
+
+export const appendPatientBillingEligibility = (patientId: string, record: unknown) =>
+  request<{ checks: unknown[] }>(
+    `/api/drive/patients/${encodeURIComponent(patientId)}/billing-eligibility`,
+    {
+      method: 'POST',
+      body: JSON.stringify(record),
+    }
+  );
+
 // --- UTILS ---
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

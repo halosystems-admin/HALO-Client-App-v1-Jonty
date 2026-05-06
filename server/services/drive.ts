@@ -221,6 +221,40 @@ export async function getOrCreatePatientBillingClaimsFolder(token: string, patie
 }
 
 /**
+ * Find or create a "Billing Eligibility" subfolder inside a patient folder.
+ */
+export async function getOrCreatePatientBillingEligibilityFolder(token: string, patientFolderId: string): Promise<string> {
+  const searchQuery = encodeURIComponent(
+    `'${patientFolderId}' in parents and name='Billing Eligibility' and mimeType='application/vnd.google-apps.folder' and trashed=false`
+  );
+  const data = await driveRequest(token, `/files?q=${searchQuery}&fields=files(id)`);
+
+  if (data.files && data.files.length > 0) {
+    return data.files[0].id;
+  }
+
+  const createRes = await fetch(`${driveApi}/files`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: 'Billing Eligibility',
+      parents: [patientFolderId],
+      mimeType: 'application/vnd.google-apps.folder',
+    }),
+  });
+
+  if (!createRes.ok) {
+    throw new Error(`[Drive ${createRes.status}] Failed to create Billing Eligibility folder`);
+  }
+
+  const folder = (await createRes.json()) as { id: string };
+  return folder.id;
+}
+
+/**
  * Upload a buffer to Google Drive using multipart upload.
  */
 export async function uploadToDrive(

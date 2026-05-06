@@ -6,6 +6,7 @@ import {
   findFileInFolder,
   getHaloRootFolder,
   getOrCreatePatientBillingClaimsFolder,
+  getOrCreatePatientBillingEligibilityFolder,
   getOrCreatePatientNotesFolder,
   readJsonFileFromDrive,
   sanitizeString,
@@ -55,6 +56,7 @@ const DEFAULT_PAGE_SIZE = 50;
 const SESSIONS_FILE_NAME = 'halo_scribe_sessions.json';
 const ADMISSIONS_BOARD_FILE_NAME = 'halo_admissions_board.json';
 const BILLING_CLAIMS_FILE_NAME = 'halo_billing_claims.json';
+const BILLING_ELIGIBILITY_FILE_NAME = 'halo_billing_eligibility.json';
 
 // In-memory cache for first page of file list (per folder). Makes repeat views instant.
 const FILES_CACHE_TTL_MS = 30_000; // 30 seconds
@@ -1048,6 +1050,14 @@ async function findBillingClaimsFile(token: string, patientFolderId: string): Pr
   return data.files && data.files.length > 0 ? data.files[0].id : null;
 }
 
+async function findBillingEligibilityFile(token: string, patientFolderId: string): Promise<string | null> {
+  const query = encodeURIComponent(
+    `'${patientFolderId}' in parents and name='${BILLING_ELIGIBILITY_FILE_NAME}' and mimeType='application/json' and trashed=false`
+  );
+  const data = await driveRequest(token, `/files?q=${query}&fields=files(id)`);
+  return data.files && data.files.length > 0 ? data.files[0].id : null;
+}
+
 // --- BILLING CLAIMS PER PATIENT (JSON file in patient folder) ---
 
 // GET /patients/:id/billing-claims
@@ -1112,6 +1122,85 @@ router.post('/patients/:id/billing-claims', async (req: Request, res: Response) 
   } catch (err) {
     console.error('Save billing claims error:', err);
     res.status(500).json({ error: 'Failed to save billing claims.' });
+  }
+});
+
+// --- BILLING ELIGIBILITY PER PATIENT (JSON file in patient folder) ---
+
+// GET /patients/:id/billing-eligibility
+router.get('/patients/:id/billing-eligibility', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const folderId = getRouteParam(req.params.id);
+    const fileId = await findBillingEligibilityFile(token, folderId);
+    if (!fileId) {
+      res.json({ checks: [] });
+      return;
+    }
+    const checks = await readJsonFileFromDrive<unknown[]>(token, fileId, []);
+    res.json({ checks });
+  } catch (err) {
+    console.error('Load billing eligibility error:', err);
+    res.status(500).json({ error: 'Failed to load billing eligibility.' });
+  }
+});
+
+// POST /patients/:id/billing-eligibility — append an eligibility check record
+router.post('/patients/:id/billing-eligibility', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const folderId = getRouteParam(req.params.id);
+
+    const record = req.body as unknown;
+    if (!record || typeof record !== 'object') {
+      res.status(400).json({ error: 'Eligibility record is required.' });
+      return;
+    }
+
+    const existingFileId = await findBillingEligibilityFile(token, folderId);
+    const existing = existingFileId
+      ? await readJsonFileFromDrive<unknown[]>(token, existingFileId, [])
+      : [];
+
+    const next = [...existing, record].slice(-400); // cap
+    await upsertJsonFileInFolder(token, folderId, BILLING_ELIGIBILITY_FILE_NAME, next, {
+      type: 'halo_billing_eligibility',
+    });
+
+    // Also store a per-check JSON file in a dedicated subfolder for auditability.
+    try {
+      const billingFolderId = await getOrCreatePatientBillingEligibilityFolder(token, folderId);
+      const status = (record as any)?.eligibilityResult?.status || (record as any)?.status || '';
+      const serviceDate =
+        (record as any)?.eligibilityRequest?.serviceDate ||
+        (record as any)?.serviceDate ||
+        '';
+      const memberNumber =
+        (record as any)?.eligibilityRequest?.memberNumber ||
+        (record as any)?.memberNumber ||
+        '';
+
+      const parts = [
+        typeof serviceDate === 'string' ? serviceDate.trim() : '',
+        typeof memberNumber === 'string' ? memberNumber.trim().slice(0, 40) : '',
+        typeof status === 'string' ? status.trim().slice(0, 24) : '',
+      ].filter(Boolean);
+      const base = parts.length ? parts.join('_') : `eligibility-${Date.now()}`;
+      const safeBase = base.replace(/[\\/:*?"<>|]/g, '-').slice(0, 120);
+      const fileName = `${safeBase}.json`;
+
+      await upsertJsonFileInFolder(token, billingFolderId, fileName, record, {
+        type: 'halo_billing_eligibility_record',
+        ...(typeof status === 'string' && status.trim() ? { status: status.trim().slice(0, 24) } : {}),
+      });
+    } catch (err) {
+      console.warn('Saving per-eligibility billing JSON failed (non-fatal):', err);
+    }
+
+    res.json({ checks: next });
+  } catch (err) {
+    console.error('Save billing eligibility error:', err);
+    res.status(500).json({ error: 'Failed to save billing eligibility.' });
   }
 });
 
