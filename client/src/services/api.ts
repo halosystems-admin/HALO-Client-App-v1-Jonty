@@ -256,6 +256,10 @@ export interface PatientBillingPayload {
   medicalAidNumber?: string;
   folderNumber?: string;
   idNumber?: string;
+  schemeCode?: string;
+  planCode?: string;
+  memberNumber?: string;
+  dependantCode?: string;
 }
 
 export interface PatientCreatePayload extends PatientBillingPayload {
@@ -720,6 +724,16 @@ export const saveSettings = (settings: UserSettings) =>
   request<{ success: boolean }>('/api/drive/settings', {
     method: 'PUT',
     body: JSON.stringify(settings),
+  });
+
+// --- BILLING CLAIMS (per patient, stored in Drive) ---
+export const fetchPatientBillingClaims = (patientId: string) =>
+  request<{ claims: unknown[] }>(`/api/drive/patients/${encodeURIComponent(patientId)}/billing-claims`);
+
+export const appendPatientBillingClaim = (patientId: string, record: unknown) =>
+  request<{ claims: unknown[] }>(`/api/drive/patients/${encodeURIComponent(patientId)}/billing-claims`, {
+    method: 'POST',
+    body: JSON.stringify(record),
   });
 
 // --- UTILS ---

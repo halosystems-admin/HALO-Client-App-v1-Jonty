@@ -156,6 +156,8 @@ export interface BillingClaimOtherPayload {
 }
 
 export interface BillingClaimCreatePayload {
+  /** External reference from practice system (encounter/invoice id). */
+  externalReference?: string;
   patient: BillingPatientPayload;
   provider: BillingProviderPayload;
   diagnoses: BillingDiagnosisPayload[];

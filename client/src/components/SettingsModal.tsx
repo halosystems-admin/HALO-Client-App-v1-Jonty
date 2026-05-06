@@ -4,6 +4,7 @@ import type { UserSettings } from '../../../shared/types';
 import {
   X, Pencil, Save, User, Clock, Briefcase, MapPin, GraduationCap,
   FileText, Upload, Check, AlertCircle, Send, Plus, LayoutPanelTop,
+  CreditCard,
 } from 'lucide-react';
 import { requestNewTemplate } from '../services/api';
 
@@ -425,6 +426,136 @@ export const SettingsModal: React.FC<Props> = ({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Billing Defaults */}
+          <div className="border-t border-slate-100 pt-6">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+              <CreditCard size={12} /> Billing defaults
+            </h3>
+            <p className="text-xs text-slate-400 mb-3">
+              These values are used to auto-fill MediKredit claims so you type less.
+            </p>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Default scheme code</label>
+                  <input
+                    type="text"
+                    value={form.billing?.schemeCode || ''}
+                    onChange={(e) => setForm(prev => ({
+                      ...prev,
+                      billing: { ...(prev.billing || {}), schemeCode: e.target.value.toUpperCase() },
+                    }))}
+                    placeholder="e.g. DISC"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition bg-white"
+                    disabled={!editMode}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Default plan code</label>
+                  <input
+                    type="text"
+                    value={form.billing?.planCode || ''}
+                    onChange={(e) => setForm(prev => ({
+                      ...prev,
+                      billing: { ...(prev.billing || {}), planCode: e.target.value },
+                    }))}
+                    placeholder="e.g. PLANCODE"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition bg-white"
+                    disabled={!editMode}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Provider defaults</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Provider name</label>
+                    <input
+                      type="text"
+                      value={form.billing?.provider?.name || ''}
+                      onChange={(e) => setForm(prev => ({
+                        ...prev,
+                        billing: {
+                          ...(prev.billing || {}),
+                          provider: { ...(prev.billing?.provider || {}), name: e.target.value },
+                        },
+                      }))}
+                      placeholder="e.g. Example Practice"
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition bg-white"
+                      disabled={!editMode}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Practice number</label>
+                    <input
+                      type="text"
+                      value={form.billing?.provider?.practiceNumber || ''}
+                      onChange={(e) => setForm(prev => ({
+                        ...prev,
+                        billing: {
+                          ...(prev.billing || {}),
+                          provider: { ...(prev.billing?.provider || {}), practiceNumber: e.target.value },
+                        },
+                      }))}
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition bg-white"
+                      disabled={!editMode}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">HPC number</label>
+                    <input
+                      type="text"
+                      value={form.billing?.provider?.hpcNumber || ''}
+                      onChange={(e) => setForm(prev => ({
+                        ...prev,
+                        billing: {
+                          ...(prev.billing || {}),
+                          provider: { ...(prev.billing?.provider || {}), hpcNumber: e.target.value },
+                        },
+                      }))}
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition bg-white"
+                      disabled={!editMode}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">BHF number</label>
+                    <input
+                      type="text"
+                      value={form.billing?.provider?.bhfNumber || ''}
+                      onChange={(e) => setForm(prev => ({
+                        ...prev,
+                        billing: {
+                          ...(prev.billing || {}),
+                          provider: { ...(prev.billing?.provider || {}), bhfNumber: e.target.value },
+                        },
+                      }))}
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition bg-white"
+                      disabled={!editMode}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Group practice number</label>
+                    <input
+                      type="text"
+                      value={form.billing?.provider?.groupPracticeNumber || ''}
+                      onChange={(e) => setForm(prev => ({
+                        ...prev,
+                        billing: {
+                          ...(prev.billing || {}),
+                          provider: { ...(prev.billing?.provider || {}), groupPracticeNumber: e.target.value },
+                        },
+                      }))}
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100 outline-none transition bg-white"
+                      disabled={!editMode}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="border-t border-slate-100 pt-6">

@@ -10,6 +10,9 @@ import {
   type BillingEligibilityPayload,
   type StoredClaimRecord,
 } from '../services/billingApi';
+import type { Patient } from '../../../shared/types';
+import type { UserSettings } from '../../../shared/types';
+import { appendPatientBillingClaim, fetchPatientBillingClaims } from '../services/api';
 
 type ToastFn = (message: string, type?: 'success' | 'error' | 'info') => void;
 
@@ -40,6 +43,7 @@ function writeJson(key: string, value: unknown) {
 
 function getEmptyClaimPayload(): BillingClaimCreatePayload {
   return {
+    externalReference: '',
     patient: {
       firstName: '',
       lastName: '',
@@ -77,8 +81,22 @@ function getEmptyClaimPayload(): BillingClaimCreatePayload {
   };
 }
 
-export function BillingPage({ onToast }: { onToast: ToastFn }) {
+export function BillingPage({
+  onToast,
+  patients,
+  selectedPatientId,
+  userSettings,
+}: {
+  onToast: ToastFn;
+  patients: Patient[];
+  selectedPatientId: string | null;
+  userSettings: UserSettings | null;
+}) {
   const [tab, setTab] = useState<BillingTab>('claims');
+  const [billingPatientId, setBillingPatientId] = useState<string>('');
+
+  const effectivePatientId = billingPatientId || selectedPatientId || '';
+  const effectivePatient = effectivePatientId ? patients.find(p => p.id === effectivePatientId) : undefined;
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 md:p-6">
@@ -91,7 +109,21 @@ export function BillingPage({ onToast }: { onToast: ToastFn }) {
                 MediKredit Integration (dev). Forms are manual for now; data mapping comes next.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="min-w-[260px]">
+                <select
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                  value={effectivePatientId}
+                  onChange={(e) => setBillingPatientId(e.target.value)}
+                >
+                  <option value="">Select patient…</option>
+                  {patients.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.dob})
+                    </option>
+                  ))}
+                </select>
+              </div>
               <TabButton active={tab === 'claims'} onClick={() => setTab('claims')} icon={<FileText size={16} />}>
                 Claims
               </TabButton>
@@ -107,9 +139,9 @@ export function BillingPage({ onToast }: { onToast: ToastFn }) {
         </header>
 
         {tab === 'claims' ? (
-          <ClaimsTab onToast={onToast} />
+          <ClaimsTab onToast={onToast} patient={effectivePatient} userSettings={userSettings} />
         ) : (
-          <EligibilityTab onToast={onToast} />
+          <EligibilityTab onToast={onToast} patient={effectivePatient} userSettings={userSettings} />
         )}
       </div>
     </div>
@@ -271,7 +303,21 @@ function renderLineItemsSummary(claim: StoredClaimRecord) {
   );
 }
 
-function ClaimsTab({ onToast }: { onToast: ToastFn }) {
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { firstName: fullName.trim(), lastName: '' };
+  return { firstName: parts.slice(0, -1).join(' '), lastName: parts[parts.length - 1] };
+}
+
+function ClaimsTab({
+  onToast,
+  patient,
+  userSettings,
+}: {
+  onToast: ToastFn;
+  patient?: Patient;
+  userSettings: UserSettings | null;
+}) {
   const [subTab, setSubTab] = useState<ClaimsSubTab>('list');
   const [claims, setClaims] = useState<StoredClaimRecord[] | null>(null);
   const [claimsLoading, setClaimsLoading] = useState(false);
@@ -280,6 +326,8 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const claimDetailReqIdRef = useRef(0);
   const pollTimerRef = useRef<number | null>(null);
+  const [patientClaims, setPatientClaims] = useState<unknown[] | null>(null);
+  const [patientClaimsLoading, setPatientClaimsLoading] = useState(false);
 
   const [submitPayload, setSubmitPayload] = useState<BillingClaimCreatePayload>(() => {
     const saved = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
@@ -291,6 +339,41 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
     const saved = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
     return saved ?? getEmptyClaimPayload();
   });
+
+  const applyPatientToClaim = (base: BillingClaimCreatePayload): BillingClaimCreatePayload => {
+    if (!patient) return base;
+    const name = splitName(patient.name || '');
+    const providerDefaults = userSettings?.billing?.provider;
+    return {
+      ...base,
+      patient: {
+        ...base.patient,
+        firstName: name.firstName || base.patient.firstName,
+        lastName: name.lastName || base.patient.lastName,
+        dateOfBirth: patient.dob && patient.dob !== 'Unknown' ? patient.dob : base.patient.dateOfBirth,
+        idNumber: patient.idNumber || base.patient.idNumber,
+        dependantCode: patient.dependantCode || base.patient.dependantCode,
+        planCode: patient.planCode || patient.medicalAidPlan || base.patient.planCode,
+        memberNumber: patient.memberNumber || patient.medicalAidNumber || base.patient.memberNumber,
+      },
+      provider: {
+        ...base.provider,
+        name: providerDefaults?.name || base.provider.name,
+        practiceNumber: providerDefaults?.practiceNumber || base.provider.practiceNumber,
+        hpcNumber: providerDefaults?.hpcNumber || base.provider.hpcNumber,
+        bhfNumber: providerDefaults?.bhfNumber || base.provider.bhfNumber,
+        groupPracticeNumber: providerDefaults?.groupPracticeNumber || base.provider.groupPracticeNumber,
+      },
+    };
+  };
+
+  // Auto-apply patient + provider defaults when patient changes (Submit + Reverse)
+  React.useEffect(() => {
+    if (!patient?.id) return;
+    setSubmitPayload((prev) => applyPatientToClaim(prev));
+    setReversalPayload((prev) => applyPatientToClaim(prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patient?.id]);
 
   const canSubmit = useMemo(() => {
     const hasPatient = submitPayload.patient.firstName.trim() && submitPayload.patient.lastName.trim();
@@ -310,6 +393,22 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
       onToast(e instanceof Error ? e.message : 'Failed to load claims.', 'error');
     } finally {
       setClaimsLoading(false);
+    }
+  };
+
+  const refreshPatientClaims = async () => {
+    if (!patient?.id) {
+      setPatientClaims(null);
+      return;
+    }
+    setPatientClaimsLoading(true);
+    try {
+      const res = await fetchPatientBillingClaims(patient.id);
+      setPatientClaims(res.claims || []);
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : 'Failed to load patient claim history.', 'error');
+    } finally {
+      setPatientClaimsLoading(false);
     }
   };
 
@@ -334,6 +433,10 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
       pollTimerRef.current = null;
     };
   }, []);
+
+  React.useEffect(() => {
+    refreshPatientClaims().catch(() => {});
+  }, [patient?.id]);
 
   const selectAndLoadClaim = async (id: string) => {
     setSelectedClaimId(id);
@@ -363,6 +466,17 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
         existing[result.transactionNumber] = submitPayload;
         writeJson(LS_SUBMITTED_BY_TX, existing);
       }
+
+      if (patient?.id) {
+        await appendPatientBillingClaim(patient.id, {
+          savedAt: new Date().toISOString(),
+          patientId: patient.id,
+          claimRequest: submitPayload,
+          claimResult: result,
+        });
+        await refreshPatientClaims();
+      }
+
       await refreshClaims();
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'Failed to submit claim.', 'error');
@@ -439,7 +553,7 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Recent claims</p>
               {claims === null ? (
-                <p className="text-sm text-slate-500">Click refresh to load claims.</p>
+                <p className="text-sm text-slate-500">Loading claims…</p>
               ) : claims.length === 0 ? (
                 <p className="text-sm text-slate-500">No claims found.</p>
               ) : (
@@ -547,12 +661,53 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
           </div>
         )}
 
+        {subTab === 'list' && patient?.id && (
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Patient claim history</p>
+                <p className="text-sm font-semibold text-slate-800">{patient.name}</p>
+              </div>
+              {patientClaimsLoading ? (
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
+                  <RefreshCw size={14} className="animate-spin" />
+                  Loading…
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3">
+              {patientClaims === null ? (
+                <p className="text-sm text-slate-500">Select a patient to see saved claim history.</p>
+              ) : patientClaims.length === 0 ? (
+                <p className="text-sm text-slate-500">No saved claims for this patient yet.</p>
+              ) : (
+                <pre className="max-h-[260px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                  {JSON.stringify(patientClaims.slice(-20), null, 2)}
+                </pre>
+              )}
+            </div>
+          </div>
+        )}
+
         {subTab === 'submit' && (
           <div className="mt-1">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
               Submit new claim
             </p>
             <div className="mb-3 flex flex-wrap gap-2">
+              <SmallButton
+                onClick={() => {
+                  if (!patient) {
+                    onToast('Select a patient first to autofill.', 'info');
+                    return;
+                  }
+                  setSubmitPayload((prev) => applyPatientToClaim(prev));
+                  onToast('Autofilled claim from patient billing fields.', 'success');
+                }}
+                variant="secondary"
+              >
+                Use patient billing
+              </SmallButton>
               <SmallButton
                 onClick={() => {
                   const saved = readJson<BillingClaimCreatePayload>(LS_LAST_SUBMIT);
@@ -590,6 +745,19 @@ function ClaimsTab({ onToast }: { onToast: ToastFn }) {
         {subTab === 'reverse' && (
           <div className="mt-1 space-y-4">
             <div className="flex flex-wrap gap-2">
+              <SmallButton
+                onClick={() => {
+                  if (!patient) {
+                    onToast('Select a patient first to autofill.', 'info');
+                    return;
+                  }
+                  setReversalPayload((prev) => applyPatientToClaim(prev));
+                  onToast('Autofilled reversal details from patient billing fields.', 'success');
+                }}
+                variant="secondary"
+              >
+                Use patient billing
+              </SmallButton>
               <SmallButton
                 onClick={() => {
                   // Use the current submit form as the reversal base
@@ -748,6 +916,19 @@ function ClaimForm({
 
   return (
     <div className="space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3">
+        <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Reference</p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <Label>External reference</Label>
+            <Input
+              value={payload.externalReference || ''}
+              onChange={e => onChange({ ...payload, externalReference: e.target.value })}
+              placeholder="e.g. ENCOUNTER-123 / INVOICE-456"
+            />
+          </div>
+        </div>
+      </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
           <Label>Patient first name</Label>
@@ -979,7 +1160,15 @@ function ClaimForm({
   );
 }
 
-function EligibilityTab({ onToast }: { onToast: ToastFn }) {
+function EligibilityTab({
+  onToast,
+  patient,
+  userSettings,
+}: {
+  onToast: ToastFn;
+  patient?: Patient;
+  userSettings: UserSettings | null;
+}) {
   const [payload, setPayload] = useState<BillingEligibilityPayload>({
     requestType: 'normal',
     memberNumber: '',
@@ -1025,8 +1214,11 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
   };
 
   const check = async () => {
-    if (!(payload.memberNumber ?? '').trim() || !payload.serviceDate || !payload.schemeCode?.trim() || !payload.planCode?.trim()) {
-      onToast('Member number, service date, scheme code, and plan code are required.', 'error');
+    // OpenAPI only requires serviceDate, but in practice MediKredit often needs scheme+plan
+    // and either memberNumber OR patientIdNumber (IDCHECK flow).
+    const hasMemberOrId = !!(payload.memberNumber ?? '').trim() || !!payload.patientIdNumber?.trim();
+    if (!payload.serviceDate || !payload.schemeCode?.trim() || !payload.planCode?.trim() || !hasMemberOrId) {
+      onToast('Service date, scheme code, plan code, and either member number or patient ID number are required.', 'error');
       return;
     }
     setLoading(true);
@@ -1056,6 +1248,30 @@ function EligibilityTab({ onToast }: { onToast: ToastFn }) {
       </SmallButton>
     }>
       <div className="mb-3 flex flex-wrap gap-2">
+        <SmallButton
+          onClick={() => {
+            if (!patient) {
+              onToast('Select a patient first to autofill.', 'info');
+              return;
+            }
+            const name = splitName(patient.name || '');
+            setPayload((prev) => ({
+              ...prev,
+              memberNumber: patient.memberNumber || patient.medicalAidNumber || prev.memberNumber,
+              dependantCode: patient.dependantCode || prev.dependantCode,
+              patientDateOfBirth: (patient.dob && patient.dob !== 'Unknown') ? patient.dob : prev.patientDateOfBirth,
+              patientIdNumber: patient.idNumber || prev.patientIdNumber,
+              patientFirstName: name.firstName || prev.patientFirstName,
+              patientLastName: name.lastName || prev.patientLastName,
+              planCode: patient.planCode || patient.medicalAidPlan || prev.planCode,
+              schemeCode: patient.schemeCode || userSettings?.billing?.schemeCode || prev.schemeCode,
+            }));
+            onToast('Autofilled eligibility from patient billing fields.', 'success');
+          }}
+          variant="secondary"
+        >
+          Use patient billing
+        </SmallButton>
         <SmallButton
           onClick={() => {
             const saved = readJson<BillingEligibilityPayload>(LS_LAST_ELIGIBILITY);

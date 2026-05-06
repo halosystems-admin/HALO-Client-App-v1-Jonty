@@ -38,6 +38,11 @@ export const App = () => {
   const [newPatientMedicalAid, setNewPatientMedicalAid] = useState("");
   const [newPatientMedicalAidNumber, setNewPatientMedicalAidNumber] = useState("");
   const [newPatientMedicalAidPlan, setNewPatientMedicalAidPlan] = useState("");
+  // MediKredit billing fields (patient-level)
+  const [newPatientSchemeCode, setNewPatientSchemeCode] = useState("");
+  const [newPatientPlanCode, setNewPatientPlanCode] = useState("");
+  const [newPatientMemberNumber, setNewPatientMemberNumber] = useState("");
+  const [newPatientDependantCode, setNewPatientDependantCode] = useState("");
   const [newPatientNotes, setNewPatientNotes] = useState("");
   // Sticker scan state
   const [stickerScanning, setStickerScanning] = useState(false);
@@ -244,6 +249,10 @@ export const App = () => {
     setNewPatientMedicalAid("");
     setNewPatientMedicalAidNumber("");
     setNewPatientMedicalAidPlan("");
+    setNewPatientSchemeCode("");
+    setNewPatientPlanCode("");
+    setNewPatientMemberNumber("");
+    setNewPatientDependantCode("");
     setNewPatientNotes("");
     setStickerPreview(null);
     setStickerScanning(false);
@@ -303,6 +312,10 @@ export const App = () => {
         medicalAidPlan: newPatientMedicalAidPlan,
         folderNumber: newPatientFolderNumber,
         idNumber: newPatientIdNumber,
+        schemeCode: newPatientSchemeCode,
+        planCode: newPatientPlanCode,
+        memberNumber: newPatientMemberNumber,
+        dependantCode: newPatientDependantCode,
       });
       if (newP) {
         await refreshPatients();
@@ -547,7 +560,12 @@ export const App = () => {
         ) : activeMainView === 'evidence' && evidenceEnabled ? (
           <EvidencePage patients={patients} onToast={showToast} />
         ) : activeMainView === 'billing' ? (
-          <BillingPage onToast={showToast} />
+          <BillingPage
+            onToast={showToast}
+            patients={patients}
+            selectedPatientId={selectedPatientId}
+            userSettings={userSettings}
+          />
         ) : activePatient ? (
           <PatientWorkspace
             key={activePatient.id}
@@ -806,6 +824,53 @@ export const App = () => {
                       value={newPatientMedicalAidPlan}
                       onChange={e => setNewPatientMedicalAidPlan(e.target.value)}
                       placeholder="e.g. Comprehensive"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Billing (MediKredit) */}
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Billing (MediKredit)</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Scheme Code</label>
+                    <input
+                      type="text"
+                      value={newPatientSchemeCode}
+                      onChange={e => setNewPatientSchemeCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. DISC"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Plan Code</label>
+                    <input
+                      type="text"
+                      value={newPatientPlanCode}
+                      onChange={e => setNewPatientPlanCode(e.target.value)}
+                      placeholder="e.g. PLANCODE"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Member Number</label>
+                    <input
+                      type="text"
+                      value={newPatientMemberNumber}
+                      onChange={e => setNewPatientMemberNumber(e.target.value)}
+                      placeholder="e.g. MK1050533"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Dependant Code</label>
+                    <input
+                      type="text"
+                      value={newPatientDependantCode}
+                      onChange={e => setNewPatientDependantCode(e.target.value)}
+                      placeholder="e.g. 01"
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 outline-none transition"
                     />
                   </div>

@@ -12,6 +12,11 @@ export interface Patient {
   medicalAidNumber?: string;
   folderNumber?: string;
   idNumber?: string;
+  /** MediKredit / billing specific fields (stored on Drive appProperties). */
+  schemeCode?: string;
+  planCode?: string;
+  memberNumber?: string;
+  dependantCode?: string;
 }
 
 export interface DriveFile {
@@ -75,6 +80,18 @@ export interface UserSettings {
   // Halo template (for generate_note)
   templateId?: string;
   modules?: UserModulesSettings;
+  /** Billing defaults used to autofill MediKredit claim forms. */
+  billing?: {
+    schemeCode?: string;
+    planCode?: string;
+    provider?: {
+      name?: string;
+      practiceNumber?: string;
+      hpcNumber?: string;
+      bhfNumber?: string;
+      groupPracticeNumber?: string;
+    };
+  };
 }
 
 export type EvidenceSourceType =
@@ -151,6 +168,17 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   customTemplateName: '',
   templateId: 'clinical_note',
   modules: DEFAULT_USER_MODULES,
+  billing: {
+    schemeCode: '',
+    planCode: '',
+    provider: {
+      name: '',
+      practiceNumber: '',
+      hpcNumber: '',
+      bhfNumber: '',
+      groupPracticeNumber: '',
+    },
+  },
 };
 
 export function normalizeUserSettings(value: Partial<UserSettings> | null | undefined): UserSettings {
@@ -160,6 +188,14 @@ export function normalizeUserSettings(value: Partial<UserSettings> | null | unde
     modules: {
       ...DEFAULT_USER_MODULES,
       ...(value?.modules || {}),
+    },
+    billing: {
+      ...(DEFAULT_USER_SETTINGS.billing || {}),
+      ...(value?.billing || {}),
+      provider: {
+        ...(DEFAULT_USER_SETTINGS.billing?.provider || {}),
+        ...(value?.billing?.provider || {}),
+      },
     },
   };
 }

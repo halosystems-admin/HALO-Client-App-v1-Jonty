@@ -5,12 +5,15 @@ import {
   driveRequest,
   findFileInFolder,
   getHaloRootFolder,
+  getOrCreatePatientBillingClaimsFolder,
   getOrCreatePatientNotesFolder,
+  readJsonFileFromDrive,
   sanitizeString,
   isValidDate,
   isValidSex,
   parseFolderString,
   parsePatientFolder,
+  upsertJsonFileInFolder,
 } from '../services/drive';
 import { parseSessionNotes, parseSessionsJson } from '../utils/scribeSessions';
 import {
@@ -51,6 +54,7 @@ const DEFAULT_PAGE_SIZE = 50;
 // Internal app file — never show in patient folder listing
 const SESSIONS_FILE_NAME = 'halo_scribe_sessions.json';
 const ADMISSIONS_BOARD_FILE_NAME = 'halo_admissions_board.json';
+const BILLING_CLAIMS_FILE_NAME = 'halo_billing_claims.json';
 
 // In-memory cache for first page of file list (per folder). Makes repeat views instant.
 const FILES_CACHE_TTL_MS = 30_000; // 30 seconds
@@ -200,6 +204,10 @@ router.post('/patients', async (req: Request, res: Response) => {
     const medicalAidNumber = sanitizeString(req.body.medicalAidNumber);
     const folderNumber = sanitizeString(req.body.folderNumber);
     const idNumber = sanitizeString(req.body.idNumber);
+    const schemeCode = sanitizeString(req.body.schemeCode);
+    const planCode = sanitizeString(req.body.planCode);
+    const memberNumber = sanitizeString(req.body.memberNumber);
+    const dependantCode = sanitizeString(req.body.dependantCode);
 
     if (!name || name.length < 2) {
       res.status(400).json({ error: 'Patient name must be at least 2 characters.' });
@@ -233,6 +241,10 @@ router.post('/patients', async (req: Request, res: Response) => {
           ...(medicalAidNumber ? { medicalAidNumber } : {}),
           ...(folderNumber ? { folderNumber } : {}),
           ...(idNumber ? { idNumber } : {}),
+          ...(schemeCode ? { schemeCode } : {}),
+          ...(planCode ? { planCode } : {}),
+          ...(memberNumber ? { memberNumber } : {}),
+          ...(dependantCode ? { dependantCode } : {}),
         },
       }),
     });
@@ -249,6 +261,10 @@ router.post('/patients', async (req: Request, res: Response) => {
       medicalAidNumber: medicalAidNumber || undefined,
       folderNumber: folderNumber || undefined,
       idNumber: idNumber || undefined,
+      schemeCode: schemeCode || undefined,
+      planCode: planCode || undefined,
+      memberNumber: memberNumber || undefined,
+      dependantCode: dependantCode || undefined,
     });
   } catch (err) {
     console.error('Create patient error:', err);
@@ -285,6 +301,18 @@ router.patch('/patients/:id', async (req: Request, res: Response) => {
       : undefined;
     const idNumber = hasOwnField(body, 'idNumber')
       ? sanitizeString(body.idNumber)
+      : undefined;
+    const schemeCode = hasOwnField(body, 'schemeCode')
+      ? sanitizeString(body.schemeCode)
+      : undefined;
+    const planCode = hasOwnField(body, 'planCode')
+      ? sanitizeString(body.planCode)
+      : undefined;
+    const memberNumber = hasOwnField(body, 'memberNumber')
+      ? sanitizeString(body.memberNumber)
+      : undefined;
+    const dependantCode = hasOwnField(body, 'dependantCode')
+      ? sanitizeString(body.dependantCode)
       : undefined;
 
     if (name !== undefined && name.length < 2) {
@@ -333,6 +361,10 @@ router.patch('/patients/:id', async (req: Request, res: Response) => {
     }
     if (hasOwnField(body, 'folderNumber')) nextAppProperties.folderNumber = folderNumber || '';
     if (hasOwnField(body, 'idNumber')) nextAppProperties.idNumber = idNumber || '';
+    if (hasOwnField(body, 'schemeCode')) nextAppProperties.schemeCode = schemeCode || '';
+    if (hasOwnField(body, 'planCode')) nextAppProperties.planCode = planCode || '';
+    if (hasOwnField(body, 'memberNumber')) nextAppProperties.memberNumber = memberNumber || '';
+    if (hasOwnField(body, 'dependantCode')) nextAppProperties.dependantCode = dependantCode || '';
 
     await fetch(`${driveApi}/files/${id}`, {
       method: 'PATCH',
@@ -1007,6 +1039,81 @@ async function findSessionsFile(token: string, patientFolderId: string): Promise
   const data = await driveRequest(token, `/files?q=${query}&fields=files(id)`);
   return data.files && data.files.length > 0 ? data.files[0].id : null;
 }
+
+async function findBillingClaimsFile(token: string, patientFolderId: string): Promise<string | null> {
+  const query = encodeURIComponent(
+    `'${patientFolderId}' in parents and name='${BILLING_CLAIMS_FILE_NAME}' and mimeType='application/json' and trashed=false`
+  );
+  const data = await driveRequest(token, `/files?q=${query}&fields=files(id)`);
+  return data.files && data.files.length > 0 ? data.files[0].id : null;
+}
+
+// --- BILLING CLAIMS PER PATIENT (JSON file in patient folder) ---
+
+// GET /patients/:id/billing-claims
+router.get('/patients/:id/billing-claims', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const folderId = getRouteParam(req.params.id);
+    const fileId = await findBillingClaimsFile(token, folderId);
+    if (!fileId) {
+      res.json({ claims: [] });
+      return;
+    }
+    const claims = await readJsonFileFromDrive<unknown[]>(token, fileId, []);
+    res.json({ claims });
+  } catch (err) {
+    console.error('Load billing claims error:', err);
+    res.status(500).json({ error: 'Failed to load billing claims.' });
+  }
+});
+
+// POST /patients/:id/billing-claims — append a claim record
+router.post('/patients/:id/billing-claims', async (req: Request, res: Response) => {
+  try {
+    const token = req.session.accessToken!;
+    const folderId = getRouteParam(req.params.id);
+
+    const record = req.body as unknown;
+    if (!record || typeof record !== 'object') {
+      res.status(400).json({ error: 'Claim record is required.' });
+      return;
+    }
+
+    const existingFileId = await findBillingClaimsFile(token, folderId);
+    const existing = existingFileId
+      ? await readJsonFileFromDrive<unknown[]>(token, existingFileId, [])
+      : [];
+
+    const next = [...existing, record].slice(-200); // cap
+    await upsertJsonFileInFolder(token, folderId, BILLING_CLAIMS_FILE_NAME, next, {
+      type: 'halo_billing_claims',
+    });
+
+    // Also store a per-claim JSON file in a dedicated subfolder for auditability.
+    try {
+      const billingFolderId = await getOrCreatePatientBillingClaimsFolder(token, folderId);
+      const tx =
+        (record as any)?.claimResult?.transactionNumber ||
+        (record as any)?.transactionNumber ||
+        (record as any)?.tx ||
+        '';
+      const safeTx = typeof tx === 'string' ? tx.trim().slice(0, 80) : '';
+      const fileName = safeTx ? `${safeTx}.json` : `claim-${Date.now()}.json`;
+      await upsertJsonFileInFolder(token, billingFolderId, fileName, record, {
+        type: 'halo_billing_claim_record',
+        ...(safeTx ? { transactionNumber: safeTx } : {}),
+      });
+    } catch (err) {
+      console.warn('Saving per-claim billing JSON failed (non-fatal):', err);
+    }
+
+    res.json({ claims: next });
+  } catch (err) {
+    console.error('Save billing claims error:', err);
+    res.status(500).json({ error: 'Failed to save billing claims.' });
+  }
+});
 
 // GET /settings
 router.get('/settings', async (req: Request, res: Response) => {

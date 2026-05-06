@@ -187,6 +187,40 @@ export async function getOrCreatePatientNotesFolder(token: string, patientFolder
 }
 
 /**
+ * Find or create a "Billing Claims" subfolder inside a patient folder.
+ */
+export async function getOrCreatePatientBillingClaimsFolder(token: string, patientFolderId: string): Promise<string> {
+  const searchQuery = encodeURIComponent(
+    `'${patientFolderId}' in parents and name='Billing Claims' and mimeType='application/vnd.google-apps.folder' and trashed=false`
+  );
+  const data = await driveRequest(token, `/files?q=${searchQuery}&fields=files(id)`);
+
+  if (data.files && data.files.length > 0) {
+    return data.files[0].id;
+  }
+
+  const createRes = await fetch(`${driveApi}/files`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: 'Billing Claims',
+      parents: [patientFolderId],
+      mimeType: 'application/vnd.google-apps.folder',
+    }),
+  });
+
+  if (!createRes.ok) {
+    throw new Error(`[Drive ${createRes.status}] Failed to create Billing Claims folder`);
+  }
+
+  const folder = (await createRes.json()) as { id: string };
+  return folder.id;
+}
+
+/**
  * Upload a buffer to Google Drive using multipart upload.
  */
 export async function uploadToDrive(
@@ -631,5 +665,9 @@ export function parsePatientFolder(f: DriveFileRaw) {
     medicalAidNumber: f.appProperties?.medicalAidNumber || undefined,
     folderNumber: f.appProperties?.folderNumber || undefined,
     idNumber: f.appProperties?.idNumber || undefined,
+    schemeCode: f.appProperties?.schemeCode || undefined,
+    planCode: f.appProperties?.planCode || undefined,
+    memberNumber: f.appProperties?.memberNumber || undefined,
+    dependantCode: f.appProperties?.dependantCode || undefined,
   };
 }
